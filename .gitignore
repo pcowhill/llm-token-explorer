@@ -1,0 +1,27 @@
+node_modules/
+dist/
+dev-dist/
+coverage/
+*.log
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.tsbuildinfo
+.env
+.env.*
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Downloaded model weights / test fixtures (never commit weights)
+tests/fixtures/models/
+.hfcache/
+*.onnx
+*.onnx_data
+
+# Copied ONNX Runtime assets (generated at build time)
+public/ort/
