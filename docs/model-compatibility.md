@@ -15,7 +15,40 @@ The only GPU available to CI is Chromium's **SwiftShader** software WebGPU adapt
 no `shader-f16`, so **f16 variants (fp16, q4f16) on WebGPU are not verified in CI** — the
 app labels them “not verified in CI”. See the [manual GPU checklist](#manual-gpu-checklist).
 
-<!-- VERIFICATION-MATRIX -->
+Full matrix, run with the opt-in catalog verification spec (default example of each model;
+top tokens of the first pass; forward-pass time for that pass — SwiftShader is a CPU
+emulation of a GPU, so its times say nothing about real GPUs):
+
+| Model (pinned revision)                                                                                | Variant               | Backend                     | Result                                                                                                |
+| ------------------------------------------------------------------------------------------------------ | --------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Qwen3.5-0.8B (`onnx-community/Qwen3.5-0.8B-Text-ONNX@25cdf33`) chat example                            | fp32 (default)        | WebGPU (SwiftShader)        | ✅ `[1, 30, 248320]`; “6” 30.1 %, “7” 21.8 %, “5” 18.0 % (= Node fp32); also CI                       |
+|                                                                                                        | q8                    | WebGPU (SwiftShader)        | ✅ “6” 29.5 %, “7” 21.9 %, “5” 18.2 %                                                                 |
+|                                                                                                        | q4                    | WebGPU (SwiftShader)        | ✅ “7” 26.7 %, “5” 26.2 %, “6” 20.9 %                                                                 |
+|                                                                                                        | fp16, q4f16           | WebGPU                      | ⚠️ **Not verified in CI** (needs shader-f16); Node.js: fp16 = fp32, q4f16 ≈ q4                        |
+|                                                                                                        | all                   | WASM                        | ❌ Not offered: `std::bad_alloc` (fp32, fp16) / missing `GatherBlockQuantized` kernel (q8, q4, q4f16) |
+| SmolLM2-135M-Instruct (`onnx-community/SmolLM2-135M-Instruct-ONNX@b8a5c0f`) “The capital of France is” | fp16 (WASM default)   | WASM                        | ✅ `[1, 5, 49152]`; “ Paris” 46.9 %, “ the” 26.6 % (= fp32); also CI                                  |
+|                                                                                                        | fp32                  | WASM                        | ✅ “ Paris” 46.9 %                                                                                    |
+|                                                                                                        | fp32 (WebGPU default) | WebGPU (SwiftShader)        | ✅ “ Paris” 46.9 %                                                                                    |
+|                                                                                                        | q8                    | WASM                        | ✅ “ located” 74.7 %, “ Paris” 7.6 %; also CI (offline test)                                          |
+|                                                                                                        | q8                    | WebGPU (SwiftShader)        | ✅ “ located” 46.5 % (quantized kernels differ per backend); also CI                                  |
+|                                                                                                        | q4f16                 | WASM                        | ✅ “ the” 49.1 %, “ Paris” 29.2 %                                                                     |
+|                                                                                                        | fp16, q4f16           | WebGPU                      | ❌ Not offered: all-zero logits ([fp16 overflow](#fp16-overflow-on-webgpu))                           |
+| Qwen2.5-0.5B-Instruct (`onnx-community/Qwen2.5-0.5B-Instruct@22942cb`) “The capital of France is”      | bnb4 (default)        | WASM                        | ✅ `[1, 5, 151936]`; “ Paris” 13.1 %, “ located” 11.3 %                                               |
+|                                                                                                        | bnb4 (default)        | WebGPU (SwiftShader)        | ✅ identical to WASM                                                                                  |
+|                                                                                                        | q4                    | WASM / WebGPU (SwiftShader) | ✅ “ Paris” 75.9 % on both                                                                            |
+|                                                                                                        | q4f16                 | WASM                        | ✅ “ Paris” 76.4 %                                                                                    |
+|                                                                                                        | q8                    | WASM / WebGPU (SwiftShader) | ✅ “____” 35.7 % (WASM) / 19.6 % (WebGPU) — q8 distorts this model (KL 0.86)                          |
+|                                                                                                        | fp16                  | WASM / WebGPU               | ❌ Not offered: `std::bad_alloc` on WASM; fp16 overflow on WebGPU                                     |
+|                                                                                                        | q4f16                 | WebGPU                      | ❌ Not offered: fp16 overflow                                                                         |
+|                                                                                                        | fp32                  | WASM / WebGPU               | ❌ Not offered: `std::bad_alloc` (single 2 GB file)                                                   |
+| GPT-2 124M (`onnx-community/gpt2-ONNX@1975fb9`) “The capital of France is”                             | fp16 (WASM default)   | WASM                        | ✅ `[1, 5, 50257]`; “ the” 8.5 %, “ now” 4.8 % (= fp32)                                               |
+|                                                                                                        | fp32                  | WASM                        | ✅ identical to fp16                                                                                  |
+|                                                                                                        | fp32 (WebGPU default) | WebGPU (SwiftShader)        | ✅ identical to WASM                                                                                  |
+|                                                                                                        | q8                    | WASM / WebGPU (SwiftShader) | ✅ “ now” 6.9 % / 6.7 %                                                                               |
+|                                                                                                        | fp16                  | WebGPU                      | ⚠️ **Not verified in CI** (needs shader-f16)                                                          |
+
+Every ✅ row: full-vocabulary logits, finite, not degenerate, softmax sums to 1, a greedy
+token appended and a second pass succeeded.
 
 Re-run the full matrix (downloads ≈12 GB once into `tests/fixtures/models/hf`):
 

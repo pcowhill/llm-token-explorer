@@ -233,3 +233,15 @@ describe('HubRepoLoader', () => {
     w.unmount()
   })
 })
+
+describe('HubRepoLoader with a catalog repository', () => {
+  it('points to the curated card and its backend note', async () => {
+    mockFetch(() => json(200, apiBody()))
+    const { w } = await mountLoader([], 'wasm')
+    await enter(w, REPO)
+    const note = w.get('[data-testid="hub-catalog-match"]')
+    expect(note.text()).toContain('Qwen3.5 0.8B')
+    expect(note.text()).toContain('GatherBlockQuantized')
+    w.unmount()
+  })
+})

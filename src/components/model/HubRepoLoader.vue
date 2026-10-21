@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import type { Backend, ModelDtype } from '@/types'
 import { useWorkbench } from '@/composables/useWorkbench'
-import { DTYPE_DESCRIPTIONS, formatBytes, notVerifiedInCi } from '@/models/catalog'
+import { CATALOG, DTYPE_DESCRIPTIONS, formatBytes, notVerifiedInCi } from '@/models/catalog'
 import type { CachedModel } from '@/models/cacheStorage'
 import { HubApiError, REPO_ID_RE, fetchRepoInfo, type HubRepoInfo } from '@/models/hubApi'
 import {
@@ -134,6 +134,8 @@ function optionLabel(v: FileVariant): string {
 }
 
 const blocked = computed(() => !!info.value?.errors.length)
+/** A curated catalog model typed here: point to its card, which knows what really runs. */
+const catalogMatch = computed(() => CATALOG.find((m) => m.repo === repoId.value) ?? null)
 const loadLabel = computed(() => {
   if (selectedCached.value) return 'Load model (cached)'
   if (selected.value?.sizeBytes)
@@ -254,6 +256,14 @@ function onDtypeChange() {
       </button>
     </div>
     <p v-if="dtype" class="small faint">{{ DTYPE_DESCRIPTIONS[dtype] }}</p>
+    <p v-if="catalogMatch" class="small alert alert-info" data-testid="hub-catalog-match">
+      This is <strong>{{ catalogMatch.name }}</strong> from the Recommended tab, where its variants
+      are verified per backend (pinned to <code>{{ catalogMatch.revision.slice(0, 7) }}</code
+      >).
+      <template v-if="catalogMatch.backendNotes?.[props.backend]">
+        {{ catalogMatch.backendNotes[props.backend] }}</template
+      >
+    </p>
     <p v-if="repoId && !validId" class="small alert alert-warning" data-testid="hub-status">
       Enter a repository id like <code>onnx-community/SmolLM2-135M-Instruct-ONNX</code>.
     </p>

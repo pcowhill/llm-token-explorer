@@ -76,8 +76,12 @@ function optionLabel(v: ModelVariant): string {
   return `${v.dtype} — ${mark}${notes.length ? ` · ${notes.join(' · ')}` : ''}`
 }
 
+/** Backend the facts refer to: the current one, or the one the model needs. */
+const factsBackend = computed<Backend>(() =>
+  runsHere.value ? props.backend : props.backend === 'wasm' ? 'webgpu' : 'wasm',
+)
 const memEstimate = computed(
-  () => variant.value.memoryEstimateBytes ?? props.model.memoryEstimateBytes[props.backend],
+  () => variant.value.memoryEstimateBytes ?? props.model.memoryEstimateBytes[factsBackend.value],
 )
 const resourceWarning = computed(() => {
   const caps = wb.capabilities.value
@@ -219,7 +223,7 @@ function switchToGpu() {
       </div>
       <div>
         <dt>Memory (estimate)</dt>
-        <dd>≈ {{ formatBytes(memEstimate) }} on {{ backendName(props.backend) }}</dd>
+        <dd>≈ {{ formatBytes(memEstimate) }} on {{ backendName(factsBackend) }}</dd>
       </div>
     </dl>
     <p
