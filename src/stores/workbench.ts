@@ -231,7 +231,11 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     timeoutMs = level === 'error' ? 0 : 6000,
   ) {
     const id = ++noticeId
-    notices.value = [...notices.value, { id, level, message }]
+    // The same message again replaces the older copy instead of stacking up.
+    notices.value = [
+      ...notices.value.filter((n) => n.message !== message || n.level !== level),
+      { id, level, message },
+    ]
     if (timeoutMs > 0) setTimeout(() => dismiss(id), timeoutMs)
     return id
   }

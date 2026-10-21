@@ -78,7 +78,9 @@ LIVE_ONLY=1 npx playwright test --project=live # smoke test against the deployed
 - **Only `src/inference/transformersEngine.ts` imports `@huggingface/transformers`.**
   - It runs the raw forward pass `model({ input_ids, attention_mask })`, which returns logits
     `[1, seq, V]`. The app uses the last row.
-  - Logits are converted with `logitsT.type === 'float32' ? logitsT : logitsT.to('float32')`.
+  - The last logits row is extracted by `lastLogitsRow()` (`src/inference/logitsRow.ts`), which
+    converts float16 logits (Float16Array or raw Uint16 bits) itself. `checkLogits()`
+    (`src/sampling/logitsHealth.ts`) rejects NaN / constant (all-zero) logits before display.
   - An `appFetch` shim handles three things:
     - Local files under the pseudo-path `/__local_models__/local/m<N>/`. This must be a path, not
       a URL, or file probing skips it.
@@ -104,20 +106,32 @@ LIVE_ONLY=1 npx playwright test --project=live # smoke test against the deployed
 - **History (`src/history/`).** History is a branching tree. Experiments use a JSON format that is
   validated on import (`docs/experiment-format.md`).
 - **Model catalog: `src/models/catalog.ts`.**
-  - It holds the "Recommended" models: `smollm2-135m-instruct`, `qwen2.5-0.5b-instruct` and
-    `gpt2`.
+  - It holds the "Recommended" models: `qwen3.5-0.8b` (featured "★ Patrick's Choice", listed
+    first, WebGPU only), `smollm2-135m-instruct`, `qwen2.5-0.5b-instruct` and `gpt2`.
   - Each is pinned to a repo plus commit SHA and has per-dtype `variants` with `sizeBytes`,
     `backends`, `fidelity` and `note`.
   - Each also has examples, verification status and limitations.
-  - Current defaults: SmolLM2 and GPT-2 use fp16; Qwen2.5 uses bnb4 on WASM.
+  - Current defaults (most faithful variant that runs on each backend): Qwen3.5 fp32 on
+    WebGPU; SmolLM2 and GPT-2 fp16 on WASM, fp32 on WebGPU; Qwen2.5 bnb4 on both.
+  - `excludedVariants` records variants deliberately not offered on a backend (shown on the
+    card); `backendNotes` explains a backend a model cannot use at all; `defaultExampleId` is
+    loaded after every model load.
+  - `scripts/fetch-test-models.mjs` (`CATALOG_FILES`) lists every pinned file per dtype;
+    `scripts/measure-fidelity.mjs <key>` measures KL vs fp32 in Node.
   - `docs/adding-a-model.md` describes the process for adding a model.
 - **Other model sources.** The Models panel (`src/components/model/ModelPanel.vue`) also offers a
-  "Hugging Face repo" tab (any transformers.js-compatible ONNX repo), local files/folders
-  (`src/models/localFiles.ts`) and a Cache tab (`src/models/cacheStorage.ts`).
+  "Hugging Face repo" tab (`HubRepoLoader.vue`: dtypes and sizes from the Hub API via
+  `src/models/hubApi.ts`), local files/folders (`src/models/localFiles.ts`) and a Cache tab
+  (`src/models/cacheStorage.ts`). Per-dtype cache state comes from `src/models/variants.ts`.
 - **Key components.**
-  - `ModelCard.vue`: dtype select with the `userChoseDtype` guard, Load button, Cached badge.
-  - `ContextWorkspace.vue`: the context editor, the Example select and Clear.
-  - `App.vue`: global keyboard shortcuts and session persistence.
+  - `ModelCard.vue`: dtype select with the `userChoseDtype` guard and per-dtype cache marks,
+    Load button ("Load model (cached)" / "Download & load (X MB)"), "Cached: …" badge.
+  - `ContextWorkspace.vue`: the context editor, the Example action menu (returns to its
+    placeholder after each choice) with a "Loaded: …" note, and Clear.
+  - `App.vue`: global keyboard shortcuts (S/G remappable via `src/composables/useShortcuts.ts`,
+    `?` cheat-sheet, Ctrl+Z/Y, Ctrl+Enter, Alt+S) and session persistence.
+  - Loading any model resets the workspace (`resetWorkspace` in the store), except that an
+    imported experiment is kept when its own model is loaded next.
   - `SettingsDialog.vue`: settings; persisted preferences live in `src/composables/usePreferences.ts`.
 - **Debug hook.** `?debug=1` exposes the store as `window.__lte`, read-only, for e2e tests.
 
@@ -132,8 +146,9 @@ LIVE_ONLY=1 npx playwright test --project=live # smoke test against the deployed
     The ONNX model really runs, but its outputs are meaningless.
   - `real-inference.spec.ts` is mandatory and runs in CI. It loads real SmolLM2-135M through the
     catalog and checks the exact token IDs, `[1, seq, 49152]` logits, probabilities that sum to 1,
-    and fp16 " Paris" ≈ 46.9%.
-  - `catalog-verification.spec.ts` is opt-in and verifies every catalog model.
+    and fp16 " Paris" ≈ 46.9%. It also loads Qwen3.5 fp32 on WebGPU (SwiftShader, ≈5 min,
+    ≈11 GB RAM) and checks the starter examples ("6" ≈ 30 %, "Thinking" ≈ 95 %).
+  - `catalog-verification.spec.ts` is opt-in and verifies every catalog model × dtype × backend.
   - `live.spec.ts` targets the deployed site.
 - **How real-inference tests get model files.**
   - Tests intercept `https://huggingface.co/**` and 302-redirect cached pinned files to
@@ -175,6 +190,9 @@ LIVE_ONLY=1 npx playwright test --project=live # smoke test against the deployed
 - **Model size limits.** Very large single-file weights (≳2 GB, external-data ONNX) may not fit
   WASM memory, so check per backend.
 - **Degenerate logits.** All-zero or uniform logits mean a broken variant or a bad conversion.
-  They are not a valid distribution, so never present them as one.
+  They are not a valid distribution, so never present them as one (`checkLogits` enforces it).
+- **fp16 overflow on WebGPU.** ORT fuses decomposed fp16 RMSNorm into an fp32 kernel only on
+  CPU/CUDA. On WebGPU, exports with fp16 `Pow/ReduceMean` norms (SmolLM2, Qwen2.5) overflow
+  and give all-zero logits. Check new fp16 exports with `scripts/analysis/fp16_overflow.py`.
 - **Offline loads.** Offline loading depends on revision pinning plus cache-first fetch. Loading
   the same model again with no network must make zero `huggingface.co` requests.

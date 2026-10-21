@@ -53,7 +53,7 @@ jobs:
     name: Playwright e2e + real model inference
     needs: quality
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -78,11 +78,11 @@ jobs:
         with:
           path: tests/fixtures/models
           key: test-models-${{ hashFiles('scripts/fetch-test-models.mjs') }}
-      - name: Fetch pinned test models (tiny fixture + SmolLM2 fp16/q8)
-        run: node scripts/fetch-test-models.mjs --smollm2
+      - name: Fetch pinned test models (tiny fixture, SmolLM2 fp16/q8, Qwen3.5 fp32)
+        run: node scripts/fetch-test-models.mjs --smollm2 --qwen35
       - name: E2E workflow, accessibility and PWA tests
         run: npx playwright test --project=e2e
-      - name: Real model inference smoke tests (SmolLM2-135M, WASM + WebGPU if available)
+      - name: Real model inference tests (SmolLM2 WASM + WebGPU, Qwen3.5 fp32 WebGPU)
         run: npx playwright test --project=real-inference
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()

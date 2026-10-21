@@ -38,7 +38,11 @@ export default defineConfig({
     ...chromium,
   },
   projects: [
-    { name: 'e2e', testMatch: /workflow\.spec\.ts|pwa\.spec\.ts|a11y\.spec\.ts/, timeout: 120_000 },
+    {
+      name: 'e2e',
+      testMatch: /workflow\.spec\.ts|interactions\.spec\.ts|pwa\.spec\.ts|a11y\.spec\.ts/,
+      timeout: 120_000,
+    },
     {
       name: 'real-inference',
       testMatch: /real-inference\.spec\.ts|catalog-verification\.spec\.ts/,
