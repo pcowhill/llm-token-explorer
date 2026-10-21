@@ -13,6 +13,8 @@ import HistoryPanel from '@/components/history/HistoryPanel.vue'
 import DiagnosticsPanel from '@/components/diagnostics/DiagnosticsPanel.vue'
 import LearnPanel from '@/components/help/LearnPanel.vue'
 import SettingsDialog from '@/components/SettingsDialog.vue'
+import ShortcutsDialog from '@/components/help/ShortcutsDialog.vue'
+import { useShortcuts, type ShortcutAction } from '@/composables/useShortcuts'
 import NoticeArea from '@/components/NoticeArea.vue'
 import { catalogModel } from '@/models/catalog'
 import type { Backend, BackendPreference, ModelDtype } from '@/types'
@@ -32,6 +34,7 @@ const { theme } = useTheme()
 const online = useOnline()
 const helpOpen = ref(false)
 const settingsOpen = ref(false)
+const shortcutsOpen = ref(false)
 const persistSession = ref(readJson<boolean>('persist', true))
 const updateAvailable = ref(false)
 const offlineReady = ref(false)
@@ -88,12 +91,39 @@ function clearSaved() {
   lastModel.value = null
   wb.notify('success', 'Saved session data cleared.')
 }
+function openShortcuts() {
+  settingsOpen.value = false
+  shortcutsOpen.value = true
+}
 function reloadLast() {
   const m = lastModel.value
   if (m) void wb.loadCatalog(m.catalogKey, { dtype: m.dtype, backend: m.backend })
 }
 
 // ------------------------------------------------------------- keyboard
+const shortcuts = useShortcuts()
+/** A shortcut action is in flight; key repeats arriving meanwhile are dropped (rate limit). */
+let shortcutBusy = false
+async function runShortcut(action: ShortcutAction, repeat: boolean) {
+  if (shortcutBusy || wb.autoRunning.value) return
+  const ready = wb.canInfer.value && wb.tokens.value.length > 0 && !wb.invalidTokenIds.value.length
+  if (!ready) {
+    if (!repeat)
+      wb.notify(
+        'info',
+        wb.canInfer.value ? 'Add some tokens to the context first.' : 'Load a model first.',
+      )
+    return
+  }
+  shortcutBusy = true
+  try {
+    // Waits for the forward pass of the current context, then appends exactly one token.
+    await (action === 'sample' ? wb.sampleOne() : wb.greedyOne())
+  } finally {
+    shortcutBusy = false
+  }
+}
+
 function onKey(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null
   const editing =
@@ -108,7 +138,8 @@ function onKey(e: KeyboardEvent) {
     void wb.runInference(true)
     return
   }
-  if (editing) return
+  // Inside an open dialog (help, settings, shortcut list) the page shortcuts are inactive.
+  if (editing || shortcuts.capturing.value || t?.closest?.('dialog')) return
   if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') {
     e.preventDefault()
     wb.undo()
@@ -118,6 +149,14 @@ function onKey(e: KeyboardEvent) {
   } else if (e.altKey && e.key.toLowerCase() === 's') {
     e.preventDefault()
     if (!e.repeat && !wb.autoRunning.value) void wb.sampleOne()
+  } else if (!mod && !e.altKey && e.key === '?') {
+    e.preventDefault()
+    shortcutsOpen.value = true
+  } else if (!mod && !e.altKey) {
+    const action = shortcuts.actionForKey(e.key)
+    if (!action) return
+    e.preventDefault()
+    void runShortcut(action, e.repeat)
   }
 }
 
@@ -199,6 +238,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     :open="settingsOpen"
     @close="settingsOpen = false"
     @clear-saved="clearSaved"
+    @shortcuts="openShortcuts"
+  />
+  <ShortcutsDialog
+    :open="shortcutsOpen"
+    @close="shortcutsOpen = false"
+    @settings="settingsOpen = true"
   />
 </template>
 

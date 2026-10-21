@@ -4,9 +4,13 @@ import { useWorkbench } from '@/composables/useWorkbench'
 import TokenText from '@/components/common/TokenText.vue'
 import InfoTip from '@/components/common/InfoTip.vue'
 import { exactNumber, formatLogit, formatProb } from '@/utils/format'
+import { keyLabel, useShortcuts } from '@/composables/useShortcuts'
 
 const wb = useWorkbench()
 const g = wb.generation
+const { bindings } = useShortcuts()
+const sampleKey = computed(() => keyLabel(bindings.value.sample))
+const greedyKey = computed(() => keyLabel(bindings.value.greedy))
 const busy = computed(
   () =>
     wb.autoRunning.value ||
@@ -52,24 +56,27 @@ const generatedText = computed(() => {
         type="button"
         class="btn btn-primary"
         :disabled="!canAct || busy"
+        :aria-keyshortcuts="sampleKey"
         data-testid="sample-one"
         @click="wb.sampleOne()"
       >
-        Sample 1 token
+        Sample 1 token <kbd class="key" aria-hidden="true">{{ sampleKey }}</kbd>
       </button>
       <button
         type="button"
         class="btn"
         :disabled="!canAct || busy"
+        :aria-keyshortcuts="greedyKey"
         data-testid="greedy-one"
         @click="wb.greedyOne()"
       >
-        Append most likely
+        Append most likely <kbd class="key" aria-hidden="true">{{ greedyKey }}</kbd>
       </button>
     </div>
     <p class="small muted">
       Or click <strong>Append</strong> on any row in the candidate table or vocabulary explorer to
-      choose a token manually.
+      choose a token manually. Hold <kbd>{{ sampleKey }}</kbd> or <kbd>{{ greedyKey }}</kbd> to
+      generate token by token; press <kbd>?</kbd> for all shortcuts.
     </p>
 
     <div v-if="pick" class="last card small" data-testid="last-pick" aria-live="polite">

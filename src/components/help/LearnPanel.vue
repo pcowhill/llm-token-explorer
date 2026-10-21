@@ -210,8 +210,12 @@ watch(
             (outside text fields).
           </li>
           <li>
+            <kbd>S</kbd> sample one token · <kbd>G</kbd> append the most likely token (default keys;
+            hold to repeat; remappable in Settings; inactive in text fields).
+          </li>
+          <li>
             <kbd>Ctrl</kbd>+<kbd>Enter</kbd> calculate · <kbd>Alt</kbd>+<kbd>S</kbd> sample one
-            token.
+            token · <kbd>?</kbd> list all shortcuts.
           </li>
         </ul>
       </section>

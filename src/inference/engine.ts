@@ -24,6 +24,8 @@ export interface HubModelSource {
   displayName: string
   /** Expected total download size in bytes (for display), if known. */
   expectedBytes?: number
+  /** External-data chunks of the chosen ONNX file, when known from the repo's file list. */
+  externalDataChunks?: number
 }
 
 export interface LocalModelSource {
@@ -80,6 +82,9 @@ export interface ChatMessage {
   content: string
 }
 
+/** Extra variables for the Jinja chat template, e.g. `{ enable_thinking: true }` for Qwen3.5. */
+export type ChatTemplateOptions = Record<string, string | number | boolean>
+
 export interface InferenceEngine {
   capabilities(): Promise<Capabilities>
   load(request: LoadRequest, onProgress: (e: ProgressEvent) => void): Promise<LoadResult>
@@ -88,6 +93,7 @@ export interface InferenceEngine {
   applyChatTemplate(
     messages: ChatMessage[],
     addGenerationPrompt: boolean,
+    templateOptions?: ChatTemplateOptions,
   ): Promise<{ ids: number[]; text: string }>
   forward(ids: number[], options: ForwardOptions): Promise<ForwardOutput>
   unload(): Promise<void>
@@ -108,6 +114,8 @@ export class EngineError extends Error {
       | 'invalid-input'
       | 'no-model'
       | 'aborted'
+      /** The forward pass "succeeded" but returned unusable logits (NaN / constant). */
+      | 'degenerate-output'
       | 'unknown' = 'unknown',
     public readonly hint?: string,
   ) {

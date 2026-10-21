@@ -39,7 +39,11 @@ async function handle(req: WorkerRequestEnvelope): Promise<void> {
         value = await engine.decode(req.ids)
         break
       case 'chatTemplate':
-        value = await engine.applyChatTemplate(req.messages, req.addGenerationPrompt)
+        value = await engine.applyChatTemplate(
+          req.messages,
+          req.addGenerationPrompt,
+          req.templateOptions,
+        )
         break
       case 'forward': {
         const out = await engine.forward(req.ids, req.options)

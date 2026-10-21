@@ -39,6 +39,7 @@ import {
   EngineError,
   classifyError,
   type ChatMessage,
+  type ChatTemplateOptions,
   type ForwardOptions,
   type ForwardOutput,
   type InferenceEngine,
@@ -47,6 +48,7 @@ import {
   type LocalModelSource,
 } from './engine'
 import { detectCapabilities } from './capabilities'
+import { lastLogitsRow, type LogitsData } from './logitsRow'
 
 /**
  * Local files are exposed to Transformers.js under this pseudo path. It must NOT be an
@@ -358,6 +360,8 @@ export class TransformersEngine implements InferenceEngine {
       env.useCustomCache = typeof caches !== 'undefined'
       modelId = source.repo
       options.revision = source.revision
+      // Repos detected via the Hub API may not declare their data chunks in config.json.
+      if (source.externalDataChunks) options.use_external_data_format = source.externalDataChunks
       fromCache = await weightsCached(source.repo, source.revision, dtype)
     }
 
@@ -435,7 +439,8 @@ export class TransformersEngine implements InferenceEngine {
       ...toIdList(gen.eos_token_id),
       ...toIdList(config.eos_token_id),
     ])
-    if (stopIds.size === 0) for (const id of tokenizerSnap.eosTokenIds) stopIds.add(id)
+    // The tokenizer's EOS ends a turn too (Qwen3.5's generation_config lists only <|endoftext|>).
+    for (const id of tokenizerSnap.eosTokenIds) stopIds.add(id)
     for (const s of tokenizerSnap.specialTokens) s.isStop = stopIds.has(s.id)
     for (const s of tokenizerSnap.specialTokens)
       if (s.isStop && !s.roles.includes('stop')) s.roles.push('stop')
@@ -621,11 +626,14 @@ export class TransformersEngine implements InferenceEngine {
   async applyChatTemplate(
     messages: ChatMessage[],
     addGenerationPrompt: boolean,
+    templateOptions: ChatTemplateOptions = {},
   ): Promise<{ ids: number[]; text: string }> {
     const tokenizer = this.requireTokenizer()
     if (!tokenizer.chat_template)
       throw new EngineError('This tokenizer has no chat template', 'invalid-input')
+    // Extra options become template variables (e.g. enable_thinking).
     const text = tokenizer.apply_chat_template(messages, {
+      ...templateOptions,
       tokenize: false,
       add_generation_prompt: addGenerationPrompt,
     }) as unknown as string
@@ -716,11 +724,7 @@ export class TransformersEngine implements InferenceEngine {
         'unsupported-architecture',
       )
     const dims = [...logitsT.dims]
-    const V = dims[dims.length - 1] as number
-    const rows = logitsT.size / V
-    const f32 = logitsT.type === 'float32' ? logitsT : logitsT.to('float32')
-    const data = f32.data as Float32Array
-    const logits = data.slice((rows - 1) * V, rows * V)
+    const logits = lastLogitsRow(dims, logitsT.type, logitsT.data as LogitsData)
 
     // Build / replace the KV cache from present.* outputs.
     const presentNames = Object.keys(out).filter((k) => k.startsWith('present'))

@@ -24,6 +24,8 @@
   --danger-soft: #fbe4e1;
   --special: #7a3fb0;
   --special-soft: #efe5f9;
+  --gold: #ffd43b;
+  --on-gold: #3b2a00;
   --tok-a: #e8eefc;
   --tok-b: #f5ebe0;
   --tok-border-a: #b9c9f2;
@@ -61,6 +63,8 @@
   --danger-soft: #3a1714;
   --special: #c79bf2;
   --special-soft: #2d1f3d;
+  --gold: #f5c542;
+  --on-gold: #221800;
   --tok-a: #1e2a44;
   --tok-b: #3a2c1e;
   --tok-border-a: #34497a;
@@ -288,6 +292,25 @@ label {
   background: var(--accent-soft);
   color: var(--accent);
   border-color: transparent;
+}
+
+.badge-gold {
+  background: var(--gold);
+  color: var(--on-gold);
+  border-color: color-mix(in srgb, var(--on-gold) 25%, transparent);
+}
+
+/* Keyboard-shortcut hint inside buttons and lists, e.g. "Sample [S]". */
+kbd.key {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 0.35em;
+  border: 1px solid currentcolor;
+  border-radius: 4px;
+  font-size: 0.78em;
+  line-height: 1.35;
+  text-align: center;
+  opacity: 0.85;
 }
 
 .badge-special {

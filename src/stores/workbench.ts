@@ -38,6 +38,7 @@ import {
   type PreparedLogits,
 } from '@/sampling/pipeline'
 import { Sfc32, seedToState, type PrngState } from '@/sampling/prng'
+import { checkLogits } from '@/sampling/logitsHealth'
 import {
   appendToken as treeAppend,
   canRedo,
@@ -67,7 +68,7 @@ import {
   sequencesEqual,
   assertValidTokenId,
 } from '@/tokenization/sequence'
-import { catalogModel, defaultVariant } from '@/models/catalog'
+import { catalogModel, defaultVariant, supportsBackend } from '@/models/catalog'
 
 export type ModelStatus = 'idle' | 'loading' | 'ready' | 'error'
 export type InferenceStatus = 'idle' | 'pending' | 'running' | 'ready' | 'error'
@@ -129,6 +130,7 @@ export function chooseDtype(
   const f16ok = backend !== 'webgpu' || !!caps?.webgpuAdapter?.shaderF16
   const preferred = defaultVariant(model, backend)
   if (preferred && (f16ok || !preferred.dtype.includes('16'))) return preferred.dtype
+  // Variants are listed most faithful first, so this is the best one without f16.
   const alt = model.variants.find((v) => v.backends.includes(backend) && !v.dtype.includes('16'))
   return (alt ?? model.variants[0]!).dtype
 }
@@ -211,6 +213,15 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
   const lastPick = shallowRef<LastPick | null>(null)
   let stopRequested = false
 
+  /** The example last loaded into the context (shown as "Loaded: …"); null after other resets. */
+  const loadedExample = shallowRef<{ id: string; label: string; tokens: number[] } | null>(null)
+  /**
+   * Model of a history tree that was imported (experiment file or saved session) and not yet
+   * paired with a loaded model. Loading that same model keeps the imported history instead
+   * of resetting the workspace.
+   */
+  let pendingImport: { model: ExperimentModelRef | null } | null = null
+
   // -------------------------------------------------------------- notices
   const notices = ref<Notice[]>([])
   let noticeId = 0
@@ -282,7 +293,7 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     source: ModelSource,
     backend: Backend,
     dtype: ModelDtype,
-    options: { tokenizerOnly?: boolean } = {},
+    options: { tokenizerOnly?: boolean; defaultExample?: PromptExample } = {},
   ): Promise<boolean> {
     if (modelStatus.value === 'loading') return false
     stopAuto('model change')
@@ -335,18 +346,21 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
       loadingStage.value = ''
       addSpecialTokens.value = true
       resultCache.clear()
-      // Re-validate the existing context against the new model.
-      const bad = invalidIds(tokens.value, res.info.logitsSize)
-      if (bad.length) {
-        notify(
-          'warning',
-          `${bad.length} token ID(s) in the current context are outside this model's range. Clear the context or load a matching model.`,
-        )
-      } else if (tokens.value.length) {
-        notify(
-          'info',
-          'The context keeps its token IDs. Different models use different vocabularies, so the same IDs may mean different text.',
-        )
+      const keepImported =
+        !!pendingImport && (!pendingImport.model || sameModel(pendingImport.model, res.info))
+      pendingImport = null
+      if (keepImported) {
+        const bad = invalidIds(tokens.value, res.info.logitsSize)
+        if (bad.length)
+          notify(
+            'warning',
+            `${bad.length} token ID(s) in the imported context are outside this model's range.`,
+          )
+      } else {
+        // A new model starts from a clean workspace: token IDs mean different text in
+        // different vocabularies, so the old context and history would be misleading.
+        resetWorkspace()
+        notify('info', 'Context cleared for new model.')
       }
       if (res.cacheWarnings?.length) {
         notify(
@@ -355,6 +369,7 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
           0,
         )
       }
+      if (!keepImported && options.defaultExample) await loadExample(options.defaultExample)
       await refreshDecodedText()
       if (!res.info.tokenizerOnly) scheduleInference(0)
       return true
@@ -385,9 +400,20 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     const model = catalogModel(key)
     if (!model) throw new Error(`Unknown catalog model ${key}`)
     const backend = options.backend ?? resolveBackend(backendPref.value, capabilities.value)
+    if (!options.tokenizerOnly && !supportsBackend(model, backend)) {
+      notify(
+        'error',
+        model.backendNotes?.[backend] ??
+          `${model.name} cannot run on ${backend === 'webgpu' ? 'WebGPU' : 'WASM'}.`,
+      )
+      return false
+    }
     const dtype = options.dtype ?? chooseDtype(model, backend, capabilities.value)
     const variant = model.variants.find((v) => v.dtype === dtype)
-    const ok = await loadModel(
+    const defaultExample = model.defaultExampleId
+      ? model.examples.find((e) => e.id === model.defaultExampleId)
+      : undefined
+    return loadModel(
       {
         kind: 'hub',
         repo: model.repo,
@@ -398,13 +424,33 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
       },
       backend,
       dtype,
-      { tokenizerOnly: options.tokenizerOnly },
+      { tokenizerOnly: options.tokenizerOnly, ...(defaultExample ? { defaultExample } : {}) },
     )
-    if (ok && tokens.value.length === 0) {
-      const ex = model.examples.find((e) => e.id === 'completion') ?? model.examples[0]
-      if (ex) await loadExample(ex)
-    }
-    return ok
+  }
+
+  /** Same model (repo + revision, or the same local identity), ignoring the dtype. */
+  function sameModel(ref: ExperimentModelRef, info: LoadedModelInfo): boolean {
+    if (ref.repo && info.repo) return ref.repo === info.repo && ref.revision === info.revision
+    return ref.identity === info.identity
+  }
+
+  /** Empty context, a fresh history tree, generator restarted from the seed. */
+  function resetWorkspace() {
+    stopAuto('model change')
+    cancelPendingText()
+    decodeRequest++
+    prng.value = seedToState(sampling.seed)
+    tree = createTree([], modelInfo.value?.identity ?? null, prng.value)
+    touch()
+    textDraft.value = ''
+    textSource.value = 'tokens'
+    roundTrips.value = null
+    textLocked.value = false
+    lastPick.value = null
+    loadedExample.value = null
+    autoGenerated.value = 0
+    autoStopReason.value = null
+    clearInference()
   }
 
   function cancelLoad() {
@@ -538,6 +584,7 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
 
   function clearContext() {
     setTokens([], 'Cleared context')
+    loadedExample.value = null
   }
 
   async function exampleTokens(ex: PromptExample): Promise<number[]> {
@@ -548,6 +595,7 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
       const r = await engine.applyChatTemplate(
         (ex.messages ?? []) as ChatMessage[],
         ex.addGenerationPrompt ?? true,
+        ex.templateOptions,
       )
       return r.ids
     }
@@ -571,6 +619,7 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     try {
       const ids = await exampleTokens(ex)
       setTokens(ids, `Example: ${ex.label}`)
+      loadedExample.value = { id: ex.id, label: ex.label, tokens: ids }
     } catch (e) {
       notify('error', `Could not build example: ${classifyError(e).message}`)
     }
@@ -673,6 +722,23 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
         const out = await engine.forward(ids, { useKvCache: generation.useKvCache })
         forwardCount.value++
         lastForwardMs.value = out.inferenceMs
+        const problem = checkLogits(out.logits)
+        if (problem) {
+          // Never present NaN / constant logits as a distribution (constant → uniform).
+          if (requestId !== latestRequest || key !== currentKey.value) return null
+          const info = modelInfo.value
+          result.value = null
+          prepared.value = null
+          inferenceStatus.value = 'error'
+          inferenceError.value = markRaw(
+            new EngineError(
+              `${info ? `${info.dtype} on ${info.backend === 'webgpu' ? 'WebGPU' : 'WASM'}` : 'The model'} returned invalid next-token logits: ${problem.message}`,
+              'degenerate-output',
+              'This variant does not run correctly on this backend, so no distribution is shown. Try another quantization or backend.',
+            ),
+          )
+          return null
+        }
         const r: InferenceResult = {
           requestId,
           contextKey: key,
@@ -979,6 +1045,12 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     const n = currentNode(tree)
     prng.value = n.prngState ?? seedToState(sampling.seed)
     importedModel.value = file.model
+    loadedExample.value = null
+    // Loading the experiment's model next keeps the imported history (see loadModel).
+    pendingImport =
+      modelInfo.value && (!file.model || sameModel(file.model, modelInfo.value))
+        ? null
+        : { model: file.model }
     const report = checkCompatibility(
       file,
       tree,
@@ -1051,6 +1123,7 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     autoStopReason,
     autoStartIndex,
     lastPick,
+    loadedExample,
     notices,
     stopTokenIds,
     canUndo: canUndoNow,

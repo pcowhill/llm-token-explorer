@@ -9,6 +9,7 @@ import TokenInsertBar from './TokenInsertBar.vue'
 import SpecialTokenBrowser from './SpecialTokenBrowser.vue'
 import InfoTip from '@/components/common/InfoTip.vue'
 import { formatMs } from '@/utils/format'
+import { sequencesEqual } from '@/tokenization/sequence'
 
 const wb = useWorkbench()
 const selected = ref<number | null>(null)
@@ -57,12 +58,21 @@ const examples = computed<PromptExample[]>(() => {
     })
   return out
 })
+/**
+ * The Example select is an action menu: choosing an entry loads it and the select returns
+ * to its placeholder at once, so choosing the same example again fires another change event.
+ */
 const exampleId = ref('')
 function onExample() {
   const ex = examples.value.find((e) => e.id === exampleId.value)
-  if (ex) void wb.loadExample(ex)
+  exampleId.value = ''
   selected.value = null
+  if (ex) void wb.loadExample(ex)
 }
+const loadedExample = computed(() => wb.loadedExample.value)
+const exampleEdited = computed(
+  () => !!loadedExample.value && !sequencesEqual(loadedExample.value.tokens, wb.tokens.value),
+)
 
 const ctxLen = computed(() => wb.modelInfo.value?.contextLength ?? null)
 const ctxPct = computed(() =>
@@ -136,6 +146,10 @@ function onInsertBefore(i: number) {
         Clear
       </button>
     </div>
+    <p v-if="loadedExample" class="small faint loaded-example" data-testid="loaded-example">
+      Loaded: <strong>{{ loadedExample.label }}</strong>
+      <span v-if="exampleEdited"> (edited since)</span>
+    </p>
 
     <div class="tabs" role="tablist" aria-label="Context editing modes">
       <button
@@ -328,6 +342,9 @@ function onInsertBefore(i: number) {
 }
 [role='tabpanel'] {
   padding-top: 0.3rem;
+}
+.loaded-example {
+  margin: -0.25rem 0 0;
 }
 .seq-head h3 {
   font-size: 0.9rem;
