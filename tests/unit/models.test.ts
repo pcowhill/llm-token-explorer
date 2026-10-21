@@ -11,7 +11,10 @@ describe('parseOnnxFileName', () => {
     expect(parseOnnxFileName('model_q4f16.onnx')).toEqual({ baseName: 'model', dtype: 'q4f16' })
     expect(parseOnnxFileName('model_q4.onnx')).toEqual({ baseName: 'model', dtype: 'q4' })
     expect(parseOnnxFileName('model.onnx')).toEqual({ baseName: 'model', dtype: 'fp32' })
-    expect(parseOnnxFileName('decoder_model_merged_fp16.onnx')).toEqual({ baseName: 'decoder_model_merged', dtype: 'fp16' })
+    expect(parseOnnxFileName('decoder_model_merged_fp16.onnx')).toEqual({
+      baseName: 'decoder_model_merged',
+      dtype: 'fp16',
+    })
     expect(parseOnnxFileName('config.json')).toBeNull()
   })
 })
@@ -47,7 +50,12 @@ describe('analyzeLocalFiles', () => {
     expect(r.candidates[0]!.totalBytes).toBe(200_000 + 300e6 + 20e6)
   })
   it('warns when a tiny graph has no external data file', () => {
-    const r = analyzeLocalFiles([mk('config.json'), mk('tokenizer.json'), mk('tokenizer_config.json'), mk('model.onnx', 1000)])
+    const r = analyzeLocalFiles([
+      mk('config.json'),
+      mk('tokenizer.json'),
+      mk('tokenizer_config.json'),
+      mk('model.onnx', 1000),
+    ])
     expect(r.candidates[0]?.subfolder).toBe('')
     expect(r.warnings.some((w) => w.includes('external data'))).toBe(true)
   })
@@ -62,8 +70,15 @@ describe('analyzeLocalFiles', () => {
 describe('checkConfigJson', () => {
   it('flags unknown architectures and invalid JSON', () => {
     expect(checkConfigJson('{').errors).toHaveLength(1)
-    expect(checkConfigJson('{"model_type":"llama","vocab_size":10}')).toMatchObject({ modelType: 'llama', vocabSize: 10, errors: [], warnings: [] })
-    expect(checkConfigJson('{"model_type":"bert","architectures":["BertModel"]}').warnings).toHaveLength(3) // unknown type, not causal, no vocab_size
+    expect(checkConfigJson('{"model_type":"llama","vocab_size":10}')).toMatchObject({
+      modelType: 'llama',
+      vocabSize: 10,
+      errors: [],
+      warnings: [],
+    })
+    expect(
+      checkConfigJson('{"model_type":"bert","architectures":["BertModel"]}').warnings,
+    ).toHaveLength(3) // unknown type, not causal, no vocab_size
   })
 })
 
@@ -101,21 +116,33 @@ describe('backend and dtype selection', () => {
   })
   it('auto picks WebGPU only when a non-fallback adapter exists', () => {
     expect(resolveBackend('auto', caps({}))).toBe('wasm')
-    expect(resolveBackend('auto', caps({ webgpu: true, webgpuAdapter: { isFallbackAdapter: false } }))).toBe('webgpu')
-    expect(resolveBackend('auto', caps({ webgpu: true, webgpuAdapter: { isFallbackAdapter: true } }))).toBe('wasm')
+    expect(
+      resolveBackend('auto', caps({ webgpu: true, webgpuAdapter: { isFallbackAdapter: false } })),
+    ).toBe('webgpu')
+    expect(
+      resolveBackend('auto', caps({ webgpu: true, webgpuAdapter: { isFallbackAdapter: true } })),
+    ).toBe('wasm')
     expect(resolveBackend('webgpu', null)).toBe('webgpu')
   })
   it('avoids f16 variants when the GPU lacks shader-f16', () => {
     const m = CATALOG[0]!
-    expect(chooseDtype(m, 'webgpu', caps({ webgpu: true, webgpuAdapter: { shaderF16: true } }))).toBe('q4f16')
-    expect(chooseDtype(m, 'webgpu', caps({ webgpu: true, webgpuAdapter: { shaderF16: false } }))).toBe('q8')
+    expect(
+      chooseDtype(m, 'webgpu', caps({ webgpu: true, webgpuAdapter: { shaderF16: true } })),
+    ).toBe('q4f16')
+    expect(
+      chooseDtype(m, 'webgpu', caps({ webgpu: true, webgpuAdapter: { shaderF16: false } })),
+    ).toBe('q8')
     expect(chooseDtype(m, 'wasm', caps({}))).toBe('q8')
   })
 })
 
 describe('parseCacheUrl', () => {
   it('extracts repo, revision and path', () => {
-    expect(parseCacheUrl('https://huggingface.co/onnx-community/gpt2-ONNX/resolve/abc123/onnx/model_quantized.onnx')).toEqual({
+    expect(
+      parseCacheUrl(
+        'https://huggingface.co/onnx-community/gpt2-ONNX/resolve/abc123/onnx/model_quantized.onnx',
+      ),
+    ).toEqual({
       repo: 'onnx-community/gpt2-ONNX',
       revision: 'abc123',
       path: 'onnx/model_quantized.onnx',

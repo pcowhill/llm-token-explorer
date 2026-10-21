@@ -92,10 +92,8 @@ export function validateSamplingSettings(s: SamplingSettings): string[] {
   if (!Number.isFinite(s.temperature) || s.temperature < 0)
     errors.push('Temperature must be a finite number ≥ 0.')
   if (!Number.isInteger(s.topK) || s.topK < 0) errors.push('Top-k must be an integer ≥ 0.')
-  if (!Number.isFinite(s.topP) || s.topP <= 0 || s.topP > 1)
-    errors.push('Top-p must be in (0, 1].')
-  if (!Number.isFinite(s.minP) || s.minP < 0 || s.minP > 1)
-    errors.push('Min-p must be in [0, 1].')
+  if (!Number.isFinite(s.topP) || s.topP <= 0 || s.topP > 1) errors.push('Top-p must be in (0, 1].')
+  if (!Number.isFinite(s.minP) || s.minP < 0 || s.minP > 1) errors.push('Min-p must be in [0, 1].')
   if (!Number.isInteger(s.seed) || s.seed < 0 || s.seed > 0xffffffff)
     errors.push('Seed must be an integer between 0 and 4294967295.')
   return errors

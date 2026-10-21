@@ -30,7 +30,7 @@ describe('softmax', () => {
     let s = 12345
     for (let i = 0; i < n; i++) {
       s = (s * 1103515245 + 12345) >>> 0
-      logits[i] = ((s / 2 ** 32) - 0.5) * 40
+      logits[i] = (s / 2 ** 32 - 0.5) * 40
     }
     const r = softmax(logits)
     expect(Math.abs(stableSum(r.probs) - 1)).toBeLessThan(1e-12)

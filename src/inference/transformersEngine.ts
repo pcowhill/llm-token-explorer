@@ -61,7 +61,8 @@ async function appFetch(input: string | URL, init?: RequestInit): Promise<Respon
     const prefix = `${LOCAL_ORIGIN}/models/${LOCAL_MODEL_ID}/`
     const rel = decodeURIComponent(url.startsWith(prefix) ? url.slice(prefix.length) : '')
     const file = localFiles?.get(rel)
-    if (!file) return new Response(null, { status: 404, statusText: `Local file not selected: ${rel}` })
+    if (!file)
+      return new Response(null, { status: 404, statusText: `Local file not selected: ${rel}` })
     return new Response(file, {
       status: 200,
       headers: { 'content-length': String(file.size), 'content-type': 'application/octet-stream' },
@@ -122,26 +123,50 @@ interface KvState {
 }
 
 const TOKEN_PURPOSES: [RegExp, string][] = [
-  [/^<\|endoftext\|>$/, 'End of text / document separator. Many models were trained with it between documents.'],
-  [/^<\|im_start\|>$/, 'ChatML: starts a message; followed by the role name (system/user/assistant) and a newline.'],
+  [
+    /^<\|endoftext\|>$/,
+    'End of text / document separator. Many models were trained with it between documents.',
+  ],
+  [
+    /^<\|im_start\|>$/,
+    'ChatML: starts a message; followed by the role name (system/user/assistant) and a newline.',
+  ],
   [/^<\|im_end\|>$/, 'ChatML: ends a message (end of turn).'],
   [/^<start_of_turn>$/, 'Gemma: starts a conversation turn.'],
   [/^<end_of_turn>$/, 'Gemma: ends a conversation turn.'],
   [/^<\|begin_of_text\|>$/, 'Llama 3: beginning of text.'],
   [/^<\|eot_id\|>$/, 'Llama 3: end of turn.'],
-  [/^<\|start_header_id\|>$|^<\|end_header_id\|>$/, 'Llama 3: delimits the role header of a message.'],
+  [
+    /^<\|start_header_id\|>$|^<\|end_header_id\|>$/,
+    'Llama 3: delimits the role header of a message.',
+  ],
   [/^<s>$|^<bos>$/, 'Beginning of sequence.'],
   [/^<\/s>$|^<eos>$/, 'End of sequence.'],
   [/^<pad>$|^\[PAD\]$/, 'Padding (used to batch sequences of different lengths).'],
   [/^<unk>$|^\[UNK\]$/, 'Unknown token (placeholder for text the vocabulary cannot represent).'],
   [/^<mask>$|^\[MASK\]$/, 'Mask token (masked-language-model training).'],
-  [/^<\|?(object_ref|box|quad)_(start|end)\|?>$/, 'Qwen-VL grounding markers (object references / bounding boxes).'],
-  [/^<\|?(vision|image|video)_(start|end|pad)\|?>$|^<(start|end)_of_image>$|^<image_soft_token>$/, 'Multimodal placeholder (images / video); unused by text-only models.'],
+  [
+    /^<\|?(object_ref|box|quad)_(start|end)\|?>$/,
+    'Qwen-VL grounding markers (object references / bounding boxes).',
+  ],
+  [
+    /^<\|?(vision|image|video)_(start|end|pad)\|?>$|^<(start|end)_of_image>$|^<image_soft_token>$/,
+    'Multimodal placeholder (images / video); unused by text-only models.',
+  ],
   [/^<tool_call>$|^<\/tool_call>$/, 'Tool/function-call delimiters.'],
   [/^<think>$|^<\/think>$/, 'Reasoning ("thinking") block delimiters.'],
-  [/^<(repo_name|reponame|file_sep|filename|gh_stars)>$/, 'Code-repository metadata markers from code pre-training data.'],
-  [/^<(issue_start|issue_comment|issue_closed)>$/, 'GitHub-issue structure markers from pre-training data.'],
-  [/^<(jupyter_start|jupyter_text|jupyter_code|jupyter_output|jupyter_script|empty_output)>$/, 'Jupyter-notebook structure markers from pre-training data.'],
+  [
+    /^<(repo_name|reponame|file_sep|filename|gh_stars)>$/,
+    'Code-repository metadata markers from code pre-training data.',
+  ],
+  [
+    /^<(issue_start|issue_comment|issue_closed)>$/,
+    'GitHub-issue structure markers from pre-training data.',
+  ],
+  [
+    /^<(jupyter_start|jupyter_text|jupyter_code|jupyter_output|jupyter_script|empty_output)>$/,
+    'Jupyter-notebook structure markers from pre-training data.',
+  ],
   [/^<\|fim_(prefix|middle|suffix|pad)\|>$/, 'Fill-in-the-middle code-completion markers.'],
 ]
 
@@ -173,7 +198,8 @@ function detectScheme(tok: PreTrainedTokenizer, raw: string[]): TokenizerSnapsho
     ...(j?.pre_tokenizer?.pretokenizers?.map((d) => d.type) ?? []),
   ]
   if (types.includes('ByteLevel')) return 'byte-level-bpe'
-  if (types.includes('Metaspace') || types.includes('ByteFallback') || j?.model?.byte_fallback) return 'sentencepiece'
+  if (types.includes('Metaspace') || types.includes('ByteFallback') || j?.model?.byte_fallback)
+    return 'sentencepiece'
   if (types.includes('WordPiece') || j?.model?.type === 'WordPiece') return 'wordpiece'
   // Heuristic fallback
   if (raw.some((r) => r.startsWith('Ġ'))) return 'byte-level-bpe'
@@ -248,7 +274,11 @@ export class TransformersEngine implements InferenceEngine {
       modelId = source.repo
       options.revision = source.revision
       try {
-        fromCache = await ModelRegistry.is_cached(source.repo, { revision: source.revision, dtype, device })
+        fromCache = await ModelRegistry.is_cached(source.repo, {
+          revision: source.revision,
+          dtype,
+          device,
+        })
       } catch {
         fromCache = null
       }
@@ -259,10 +289,20 @@ export class TransformersEngine implements InferenceEngine {
       const tokenizer = await AutoTokenizer.from_pretrained(modelId, options)
       this.tokenizer = tokenizer
       if (request.tokenizerOnly) {
-        this.config = (await AutoConfig.from_pretrained(modelId, options)) as unknown as Record<string, unknown>
+        this.config = (await AutoConfig.from_pretrained(modelId, options)) as unknown as Record<
+          string,
+          unknown
+        >
       } else {
-        onProgress({ stage: 'session', message: `Downloading weights and creating ONNX Runtime session (${device}, ${dtype})…` })
-        const model = await AutoModelForCausalLM.from_pretrained(modelId, { ...options, device, dtype })
+        onProgress({
+          stage: 'session',
+          message: `Downloading weights and creating ONNX Runtime session (${device}, ${dtype})…`,
+        })
+        const model = await AutoModelForCausalLM.from_pretrained(modelId, {
+          ...options,
+          device,
+          dtype,
+        })
         this.model = model
         this.config = model.config as unknown as Record<string, unknown>
       }
@@ -285,14 +325,22 @@ export class TransformersEngine implements InferenceEngine {
     const textConfig = (config.text_config ?? {}) as Record<string, unknown>
     const logitsSizeCfg = Number(config.vocab_size ?? textConfig.vocab_size ?? 0)
     const session = model
-      ? (model as unknown as { sessions: Record<string, { inputNames: string[]; outputNames: string[] }> }).sessions
+      ? (
+          model as unknown as {
+            sessions: Record<string, { inputNames: string[]; outputNames: string[] }>
+          }
+        ).sessions
       : {}
     const main = session.model ?? Object.values(session)[0]
     this.kvSupported =
       !!main &&
       main.outputNames.some((n) => n.startsWith('present.')) &&
-      main.outputNames.filter((n) => n.startsWith('present')).every((n) => /^present\.\d+\.(key|value)$/.test(n)) &&
-      main.inputNames.filter((n) => n.startsWith('past')).every((n) => /^past_key_values\.\d+\.(key|value)$/.test(n))
+      main.outputNames
+        .filter((n) => n.startsWith('present'))
+        .every((n) => /^present\.\d+\.(key|value)$/.test(n)) &&
+      main.inputNames
+        .filter((n) => n.startsWith('past'))
+        .every((n) => /^past_key_values\.\d+\.(key|value)$/.test(n))
 
     const generationConfig = (model?.generation_config ?? null) as Record<string, unknown> | null
     const tokenizerSnap = this.snapshotTokenizer(tokenizer, generationConfig)
@@ -306,20 +354,31 @@ export class TransformersEngine implements InferenceEngine {
 
     if (!logitsSize) logitsSize = tokenizerSnap.raw.length
     const gen = generationConfig ?? {}
-    const stopIds = new Set<number>([...toIdList(gen.eos_token_id), ...toIdList(config.eos_token_id)])
+    const stopIds = new Set<number>([
+      ...toIdList(gen.eos_token_id),
+      ...toIdList(config.eos_token_id),
+    ])
     if (stopIds.size === 0) for (const id of tokenizerSnap.eosTokenIds) stopIds.add(id)
     for (const s of tokenizerSnap.specialTokens) s.isStop = stopIds.has(s.id)
-    for (const s of tokenizerSnap.specialTokens) if (s.isStop && !s.roles.includes('stop')) s.roles.push('stop')
+    for (const s of tokenizerSnap.specialTokens)
+      if (s.isStop && !s.roles.includes('stop')) s.roles.push('stop')
 
     const contextLength =
-      Number(config.max_position_embeddings ?? config.n_positions ?? textConfig.max_position_embeddings ?? 0) || null
+      Number(
+        config.max_position_embeddings ??
+          config.n_positions ??
+          textConfig.max_position_embeddings ??
+          0,
+      ) || null
     const info: LoadedModelInfo = {
       identity: isLocal
         ? `local:${source.displayName}#${dtype}#${tokenizerSnap.fingerprint}`
         : `hub:${source.repo}@${source.revision}#${dtype}`,
       displayName: source.displayName,
       source: isLocal ? 'local' : source.catalogKey ? 'catalog' : 'hub',
-      ...(source.kind === 'hub' ? { repo: source.repo, revision: source.revision, catalogKey: source.catalogKey } : {}),
+      ...(source.kind === 'hub'
+        ? { repo: source.repo, revision: source.revision, catalogKey: source.catalogKey }
+        : {}),
       dtype,
       backend: device,
       modelType: String(config.model_type ?? 'unknown'),
@@ -339,13 +398,18 @@ export class TransformersEngine implements InferenceEngine {
             ...(typeof gen.temperature === 'number' ? { temperature: gen.temperature } : {}),
             ...(typeof gen.top_k === 'number' ? { topK: gen.top_k } : {}),
             ...(typeof gen.top_p === 'number' ? { topP: gen.top_p } : {}),
-            ...(typeof gen.repetition_penalty === 'number' ? { repetitionPenalty: gen.repetition_penalty } : {}),
+            ...(typeof gen.repetition_penalty === 'number'
+              ? { repetitionPenalty: gen.repetition_penalty }
+              : {}),
           }
         : null
     return { info, tokenizer: tokenizerSnap, suggestedSampling: suggested }
   }
 
-  private snapshotTokenizer(tok: PreTrainedTokenizer, generationConfig: Record<string, unknown> | null): TokenizerSnapshot {
+  private snapshotTokenizer(
+    tok: PreTrainedTokenizer,
+    generationConfig: Record<string, unknown> | null,
+  ): TokenizerSnapshot {
     const vocab = tok.get_vocab()
     const internals = (tok as unknown as TokenizerInternals)._tokenizerJSON
     const added: AddedTokenJson[] = internals?.added_tokens ?? []
@@ -365,7 +429,10 @@ export class TransformersEngine implements InferenceEngine {
     for (let id = 0; id < size; id++) {
       if (!raw[id]) continue
       try {
-        decoded[id] = tok.decode([id], { skip_special_tokens: false, clean_up_tokenization_spaces: false })
+        decoded[id] = tok.decode([id], {
+          skip_special_tokens: false,
+          clean_up_tokenization_spaces: false,
+        })
       } catch {
         decoded[id] = raw[id] as string
       }
@@ -402,7 +469,13 @@ export class TransformersEngine implements InferenceEngine {
         const roles = [...(roleMap.get(id) ?? new Set<SpecialTokenRole>())]
         if (roles.length === 0) roles.push('other')
         const content = raw[id] ?? ''
-        return { id, content, roles, purpose: purposeOf(content, roles), isStop: genEos.includes(id) }
+        return {
+          id,
+          content,
+          roles,
+          purpose: purposeOf(content, roles),
+          isStop: genEos.includes(id),
+        }
       })
 
     let addsSpecial = false
@@ -440,7 +513,9 @@ export class TransformersEngine implements InferenceEngine {
   private requireModel(): PreTrainedModel {
     if (!this.model)
       throw new EngineError(
-        this.tokenizer ? 'Only the tokenizer is loaded. Load the model weights to run inference.' : 'No model is loaded',
+        this.tokenizer
+          ? 'Only the tokenizer is loaded. Load the model weights to run inference.'
+          : 'No model is loaded',
         'no-model',
       )
     return this.model
@@ -455,12 +530,19 @@ export class TransformersEngine implements InferenceEngine {
 
   async decode(ids: number[]): Promise<string> {
     const tokenizer = this.requireTokenizer()
-    return tokenizer.decode(ids, { skip_special_tokens: false, clean_up_tokenization_spaces: false })
+    return tokenizer.decode(ids, {
+      skip_special_tokens: false,
+      clean_up_tokenization_spaces: false,
+    })
   }
 
-  async applyChatTemplate(messages: ChatMessage[], addGenerationPrompt: boolean): Promise<{ ids: number[]; text: string }> {
+  async applyChatTemplate(
+    messages: ChatMessage[],
+    addGenerationPrompt: boolean,
+  ): Promise<{ ids: number[]; text: string }> {
     const tokenizer = this.requireTokenizer()
-    if (!tokenizer.chat_template) throw new EngineError('This tokenizer has no chat template', 'invalid-input')
+    if (!tokenizer.chat_template)
+      throw new EngineError('This tokenizer has no chat template', 'invalid-input')
     const text = tokenizer.apply_chat_template(messages, {
       tokenize: false,
       add_generation_prompt: addGenerationPrompt,
@@ -472,15 +554,27 @@ export class TransformersEngine implements InferenceEngine {
 
   async forward(ids: number[], options: ForwardOptions): Promise<ForwardOutput> {
     const model = this.requireModel()
-    if (ids.length === 0) throw new EngineError('The context is empty. Add at least one token (e.g. a BOS / <|endoftext|> token).', 'invalid-input')
-    const limit = this.info?.logitsSize ?? Number((model.config as unknown as Record<string, unknown>).vocab_size ?? Infinity)
+    if (ids.length === 0)
+      throw new EngineError(
+        'The context is empty. Add at least one token (e.g. a BOS / <|endoftext|> token).',
+        'invalid-input',
+      )
+    const limit =
+      this.info?.logitsSize ??
+      Number((model.config as unknown as Record<string, unknown>).vocab_size ?? Infinity)
     for (const id of ids) {
       if (!Number.isInteger(id) || id < 0 || id >= limit)
-        throw new EngineError(`Token ID ${id} is outside the model's input range 0–${limit - 1}`, 'invalid-input')
+        throw new EngineError(
+          `Token ID ${id} is outside the model's input range 0–${limit - 1}`,
+          'invalid-input',
+        )
     }
     const ctx = this.info?.contextLength
     if (ctx && ids.length > ctx)
-      throw new EngineError(`The context has ${ids.length} tokens but the model supports at most ${ctx}.`, 'invalid-input')
+      throw new EngineError(
+        `The context has ${ids.length} tokens but the model supports at most ${ctx}.`,
+        'invalid-input',
+      )
 
     // Exact repeat of the last call: return the cached logits (no network execution).
     if (this.kv && this.kv.ids.length === ids.length && this.kv.ids.every((v, i) => v === ids[i])) {
@@ -509,23 +603,36 @@ export class TransformersEngine implements InferenceEngine {
       await this.disposeKv()
     }
 
-    const input_ids = new Tensor('int64', BigInt64Array.from(feed, (v) => BigInt(v)), [1, feed.length])
-    const attention_mask = new Tensor('int64', new BigInt64Array(ids.length).fill(1n), [1, ids.length])
+    const input_ids = new Tensor(
+      'int64',
+      BigInt64Array.from(feed, (v) => BigInt(v)),
+      [1, feed.length],
+    )
+    const attention_mask = new Tensor('int64', new BigInt64Array(ids.length).fill(1n), [
+      1,
+      ids.length,
+    ])
     const t0 = performance.now()
     let out: Record<string, Tensor>
     try {
-      out = (await (model as unknown as (x: Record<string, unknown>) => Promise<Record<string, Tensor>>)({
+      out = await (
+        model as unknown as (x: Record<string, unknown>) => Promise<Record<string, Tensor>>
+      )({
         input_ids,
         attention_mask,
         ...(past ? { past_key_values: past } : {}),
-      }))
+      })
     } catch (err) {
       await this.disposeKv()
       throw classifyError(err)
     }
     const inferenceMs = performance.now() - t0
     const logitsT = out.logits
-    if (!logitsT) throw new EngineError('The model did not return a "logits" output', 'unsupported-architecture')
+    if (!logitsT)
+      throw new EngineError(
+        'The model did not return a "logits" output',
+        'unsupported-architecture',
+      )
     const dims = [...logitsT.dims]
     const V = dims[dims.length - 1] as number
     const rows = logitsT.size / V
@@ -537,7 +644,8 @@ export class TransformersEngine implements InferenceEngine {
     const presentNames = Object.keys(out).filter((k) => k.startsWith('present'))
     if (options.useKvCache && this.kvSupported && presentNames.length) {
       const entries: Record<string, Tensor> = {}
-      for (const k of presentNames) entries[k.replace(/^present\./, 'past_key_values.')] = out[k] as Tensor
+      for (const k of presentNames)
+        entries[k.replace(/^present\./, 'past_key_values.')] = out[k] as Tensor
       const cache = new DynamicCache(entries)
       if (past && past !== cache) await disposeCache(past, cache)
       this.kv = { ids: [...ids], cache, logits: logits.slice(), dims, dtype: logitsT.type }

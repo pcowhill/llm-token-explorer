@@ -71,7 +71,12 @@ export function matchesQuery(id: number, source: VocabSource, query: VocabQuery)
   return false
 }
 
-function passesFilter(id: number, source: VocabSource, dist: VocabDistribution | null, f: VocabFilter) {
+function passesFilter(
+  id: number,
+  source: VocabSource,
+  dist: VocabDistribution | null,
+  f: VocabFilter,
+) {
   switch (f) {
     case 'all':
       return true
@@ -106,7 +111,11 @@ export function alphabeticalOrder(decoded: readonly string[], size: number): Uin
 }
 
 /** Base ordering of all IDs for a sort key, in DESCENDING (or natural ascending for id/alpha) order. */
-function baseOrder(source: VocabSource, dist: VocabDistribution | null, key: VocabSortKey): Uint32Array {
+function baseOrder(
+  source: VocabSource,
+  dist: VocabDistribution | null,
+  key: VocabSortKey,
+): Uint32Array {
   const n = source.size
   if (key === 'alphabetical') return alphabeticalOrder(source.decoded, n)
   if (key === 'id' || !dist) {

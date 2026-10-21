@@ -57,7 +57,9 @@ describe('SentencePiece bytes', () => {
 describe('categorizeToken', () => {
   const base = { special: false, added: false, scheme: 'byte-level-bpe' as const }
   it('categorizes common token kinds', () => {
-    expect(categorizeToken({ ...base, raw: '<|endoftext|>', decoded: '<|endoftext|>', special: true })).toBe('special')
+    expect(
+      categorizeToken({ ...base, raw: '<|endoftext|>', decoded: '<|endoftext|>', special: true }),
+    ).toBe('special')
     expect(categorizeToken({ ...base, raw: 'Ġthe', decoded: ' the' })).toBe('word')
     expect(categorizeToken({ ...base, raw: 'ing', decoded: 'ing' })).toBe('word-continuation')
     expect(categorizeToken({ ...base, raw: 'Ċ', decoded: '\n' })).toBe('whitespace')
@@ -65,6 +67,8 @@ describe('categorizeToken', () => {
     expect(categorizeToken({ ...base, raw: '.', decoded: '.' })).toBe('punctuation')
     expect(categorizeToken({ ...base, raw: 'âĢ', decoded: '�' })).toBe('partial-utf8')
     expect(categorizeToken({ ...base, raw: '', decoded: '' })).toBe('unmapped')
-    expect(categorizeToken({ ...base, raw: '<0x0A>', decoded: '\n', scheme: 'sentencepiece' })).toBe('byte')
+    expect(
+      categorizeToken({ ...base, raw: '<0x0A>', decoded: '\n', scheme: 'sentencepiece' }),
+    ).toBe('byte')
   })
 })

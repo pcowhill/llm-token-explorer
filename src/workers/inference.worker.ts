@@ -28,7 +28,9 @@ async function handle(req: WorkerRequestEnvelope): Promise<void> {
         value = await engine.capabilities()
         break
       case 'load':
-        value = await engine.load(req.request, (event) => post({ kind: 'progress', id: req.id, event }))
+        value = await engine.load(req.request, (event) =>
+          post({ kind: 'progress', id: req.id, event }),
+        )
         break
       case 'tokenize':
         value = await engine.tokenize(req.text, req.addSpecialTokens)
@@ -52,7 +54,12 @@ async function handle(req: WorkerRequestEnvelope): Promise<void> {
     post({ kind: 'result', id: req.id, ok: true, value }, transfer)
   } catch (err) {
     const e = classifyError(err)
-    post({ kind: 'result', id: req.id, ok: false, error: { message: e.message, errorKind: e.kind, hint: e.hint } })
+    post({
+      kind: 'result',
+      id: req.id,
+      ok: false,
+      error: { message: e.message, errorKind: e.kind, hint: e.hint },
+    })
   }
 }
 

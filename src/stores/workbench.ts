@@ -59,7 +59,14 @@ import {
   type CompatibilityReport,
   type ExperimentModelRef,
 } from '@/history/experiment'
-import { contextKey, insertAt, invalidIds, removeAt, sequencesEqual, assertValidTokenId } from '@/tokenization/sequence'
+import {
+  contextKey,
+  insertAt,
+  invalidIds,
+  removeAt,
+  sequencesEqual,
+  assertValidTokenId,
+} from '@/tokenization/sequence'
 import { catalogModel, defaultVariant } from '@/models/catalog'
 
 export type ModelStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -109,7 +116,11 @@ export function resolveBackend(pref: BackendPreference, caps: Capabilities | nul
 }
 
 /** Choose a dtype that the backend + adapter can run (f16 variants need shader-f16 on WebGPU). */
-export function chooseDtype(model: CatalogModel, backend: Backend, caps: Capabilities | null): ModelDtype {
+export function chooseDtype(
+  model: CatalogModel,
+  backend: Backend,
+  caps: Capabilities | null,
+): ModelDtype {
   const f16ok = backend !== 'webgpu' || !!caps?.webgpuAdapter?.shaderF16
   const preferred = defaultVariant(model, backend)
   if (preferred && (f16ok || !preferred.dtype.includes('16'))) return preferred.dtype
@@ -127,7 +138,12 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
   const suggestedSampling = shallowRef<LoadResult['suggestedSampling']>(null)
   const loadingLabel = ref('')
   const loadingStage = ref('')
-  const loadingTarget = shallowRef<{ label: string; backend: Backend; dtype: ModelDtype; expectedBytes?: number } | null>(null)
+  const loadingTarget = shallowRef<{
+    label: string
+    backend: Backend
+    dtype: ModelDtype
+    expectedBytes?: number
+  } | null>(null)
   const fileProgress = reactive<Record<string, FileProgress>>({})
   const modelError = shallowRef<EngineError | null>(null)
   const activeCatalogKey = ref<string | null>(null)
@@ -185,13 +201,19 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
   const autoStartedAt = ref<number | null>(null)
   const autoTokensPerSecond = ref<number | null>(null)
   const autoStopReason = ref<string | null>(null)
+  /** Context length when the current/last automatic run started. */
+  const autoStartIndex = ref(0)
   const lastPick = shallowRef<LastPick | null>(null)
   let stopRequested = false
 
   // -------------------------------------------------------------- notices
   const notices = ref<Notice[]>([])
   let noticeId = 0
-  function notify(level: Notice['level'], message: string, timeoutMs = level === 'error' ? 0 : 6000) {
+  function notify(
+    level: Notice['level'],
+    message: string,
+    timeoutMs = level === 'error' ? 0 : 6000,
+  ) {
     const id = ++noticeId
     notices.value = [...notices.value, { id, level, message }]
     if (timeoutMs > 0) setTimeout(() => dismiss(id), timeoutMs)
@@ -204,10 +226,16 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
   // ------------------------------------------------------------ derived
   const identity = computed(() => modelInfo.value?.identity ?? 'none')
   const currentKey = computed(() => contextKey(identity.value, tokens.value))
-  const canInfer = computed(() => modelStatus.value === 'ready' && !!modelInfo.value && !modelInfo.value.tokenizerOnly)
-  const invalidTokenIds = computed(() => (modelInfo.value ? invalidIds(tokens.value, modelInfo.value.logitsSize) : []))
+  const canInfer = computed(
+    () => modelStatus.value === 'ready' && !!modelInfo.value && !modelInfo.value.tokenizerOnly,
+  )
+  const invalidTokenIds = computed(() =>
+    modelInfo.value ? invalidIds(tokens.value, modelInfo.value.logitsSize) : [],
+  )
   const samplingErrors = computed(() => validateSamplingSettings(sampling))
-  const resultIsCurrent = computed(() => !!result.value && result.value.contextKey === currentKey.value)
+  const resultIsCurrent = computed(
+    () => !!result.value && result.value.contextKey === currentKey.value,
+  )
 
   const samplingMs = ref<number | null>(null)
   const adjusted = computed<AdjustedDistribution | null>(() => {
@@ -261,34 +289,39 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
       label: source.displayName,
       backend,
       dtype,
-      ...(source.kind === 'hub' && source.expectedBytes ? { expectedBytes: source.expectedBytes } : {}),
+      ...(source.kind === 'hub' && source.expectedBytes
+        ? { expectedBytes: source.expectedBytes }
+        : {}),
     }
     resetProgress()
     clearInference()
     try {
-      const res = await engine.load({ source, device: backend, dtype, tokenizerOnly: !!options.tokenizerOnly }, (e) => {
-        switch (e.stage) {
-          case 'initiate':
-          case 'download':
-            if (!fileProgress[e.file]) fileProgress[e.file] = { loaded: 0, total: 0, done: false }
-            loadingStage.value = `Fetching ${e.file}`
-            break
-          case 'progress':
-            fileProgress[e.file] = { loaded: e.loaded, total: e.total, done: false }
-            loadingStage.value = `Downloading ${e.file}`
-            break
-          case 'done':
-            if (fileProgress[e.file]) fileProgress[e.file]!.done = true
-            else fileProgress[e.file] = { loaded: 0, total: 0, done: true }
-            break
-          case 'session':
-          case 'tokenizer':
-            loadingStage.value = e.message
-            break
-          case 'total':
-            break
-        }
-      })
+      const res = await engine.load(
+        { source, device: backend, dtype, tokenizerOnly: !!options.tokenizerOnly },
+        (e) => {
+          switch (e.stage) {
+            case 'initiate':
+            case 'download':
+              if (!fileProgress[e.file]) fileProgress[e.file] = { loaded: 0, total: 0, done: false }
+              loadingStage.value = `Fetching ${e.file}`
+              break
+            case 'progress':
+              fileProgress[e.file] = { loaded: e.loaded, total: e.total, done: false }
+              loadingStage.value = `Downloading ${e.file}`
+              break
+            case 'done':
+              if (fileProgress[e.file]) fileProgress[e.file]!.done = true
+              else fileProgress[e.file] = { loaded: 0, total: 0, done: true }
+              break
+            case 'session':
+            case 'tokenizer':
+              loadingStage.value = e.message
+              break
+            case 'total':
+              break
+          }
+        },
+      )
       modelInfo.value = markRaw(res.info)
       tokenizer.value = markRaw(res.tokenizer)
       suggestedSampling.value = res.suggestedSampling
@@ -300,9 +333,15 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
       // Re-validate the existing context against the new model.
       const bad = invalidIds(tokens.value, res.info.logitsSize)
       if (bad.length) {
-        notify('warning', `${bad.length} token ID(s) in the current context are outside this model's range. Clear the context or load a matching model.`)
+        notify(
+          'warning',
+          `${bad.length} token ID(s) in the current context are outside this model's range. Clear the context or load a matching model.`,
+        )
       } else if (tokens.value.length) {
-        notify('info', 'The context keeps its token IDs. Different models use different vocabularies, so the same IDs may mean different text.')
+        notify(
+          'info',
+          'The context keeps its token IDs. Different models use different vocabularies, so the same IDs may mean different text.',
+        )
       }
       await refreshDecodedText()
       if (!res.info.tokenizerOnly) scheduleInference(0)
@@ -321,7 +360,10 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     }
   }
 
-  async function loadCatalog(key: string, options: { dtype?: ModelDtype; backend?: Backend; tokenizerOnly?: boolean } = {}) {
+  async function loadCatalog(
+    key: string,
+    options: { dtype?: ModelDtype; backend?: Backend; tokenizerOnly?: boolean } = {},
+  ) {
     const model = catalogModel(key)
     if (!model) throw new Error(`Unknown catalog model ${key}`)
     const backend = options.backend ?? resolveBackend(backendPref.value, capabilities.value)
@@ -370,7 +412,11 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
   // Context editing
   // ===================================================================
 
-  function setTokens(next: number[], label: string, opts: { coalesce?: boolean; fromText?: boolean } = {}) {
+  function setTokens(
+    next: number[],
+    label: string,
+    opts: { coalesce?: boolean; fromText?: boolean } = {},
+  ) {
     commitEdit(tree, next, {
       modelIdentity: modelInfo.value?.identity ?? null,
       prngState: prng.value,
@@ -400,7 +446,8 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
       const { ids, ms } = await engine.tokenize(text, addSpecialTokens.value)
       if (req !== textRequest) return
       tokenizeMs.value = ms
-      if (!sequencesEqual(ids, tokens.value)) setTokens(ids, 'Edited text (re-tokenized)', { coalesce: true, fromText: true })
+      if (!sequencesEqual(ids, tokens.value))
+        setTokens(ids, 'Edited text (re-tokenized)', { coalesce: true, fromText: true })
       roundTrips.value = true
       roundTripDiff.value = 0
     } catch (e) {
@@ -470,7 +517,10 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     if (!tok) throw new EngineError('Load a model or tokenizer first', 'no-model')
     if (ex.kind === 'text') return (await engine.tokenize(ex.text ?? '', true)).ids
     if (ex.kind === 'chat') {
-      const r = await engine.applyChatTemplate((ex.messages ?? []) as ChatMessage[], ex.addGenerationPrompt ?? true)
+      const r = await engine.applyChatTemplate(
+        (ex.messages ?? []) as ChatMessage[],
+        ex.addGenerationPrompt ?? true,
+      )
       return r.ids
     }
     const out: number[] = []
@@ -478,7 +528,11 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
       if ('tokenId' in part) out.push(part.tokenId)
       else if ('special' in part) {
         const id = tok.raw.indexOf(part.special)
-        if (id < 0) throw new EngineError(`Special token ${part.special} is not in this tokenizer`, 'invalid-input')
+        if (id < 0)
+          throw new EngineError(
+            `Special token ${part.special} is not in this tokenizer`,
+            'invalid-input',
+          )
         out.push(id)
       } else out.push(...(await engine.tokenize(part.text, false)).ids)
     }
@@ -531,8 +585,15 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     result.value = markRaw(r)
     const tok = tokenizer.value
     const unmapped: number[] = []
-    if (tok) for (let i = 0; i < Math.min(tok.raw.length, r.logits.length); i++) if (!tok.raw[i]) unmapped.push(i)
-    prepared.value = markRaw(prepareLogits(r.logits, { mappedCount: tok?.raw.length ?? r.logits.length, unmappedIds: unmapped }))
+    if (tok)
+      for (let i = 0; i < Math.min(tok.raw.length, r.logits.length); i++)
+        if (!tok.raw[i]) unmapped.push(i)
+    prepared.value = markRaw(
+      prepareLogits(r.logits, {
+        mappedCount: tok?.raw.length ?? r.logits.length,
+        unmappedIds: unmapped,
+      }),
+    )
     inferenceStatus.value = 'ready'
     inferenceError.value = null
   }
@@ -557,7 +618,12 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     }
     if (invalidTokenIds.value.length) {
       inferenceStatus.value = 'error'
-      inferenceError.value = markRaw(new EngineError(`Context contains token IDs outside the model's range: ${invalidTokenIds.value.slice(0, 5).join(', ')}`, 'invalid-input'))
+      inferenceError.value = markRaw(
+        new EngineError(
+          `Context contains token IDs outside the model's range: ${invalidTokenIds.value.slice(0, 5).join(', ')}`,
+          'invalid-input',
+        ),
+      )
       return null
     }
     if (ids.length === 0) {
@@ -588,7 +654,8 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
           fromResultCache: false,
         }
         resultCache.set(key, r)
-        if (resultCache.size > RESULT_CACHE_SIZE) resultCache.delete(resultCache.keys().next().value as string)
+        if (resultCache.size > RESULT_CACHE_SIZE)
+          resultCache.delete(resultCache.keys().next().value as string)
         // Stale-result protection: only adopt if this is still the newest request
         // AND the context has not changed while the network was running.
         if (requestId !== latestRequest || key !== currentKey.value) return null
@@ -626,7 +693,12 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     }
   }
 
-  function append(id: number, source: AppendSource, uniform: number | null, prngBefore: PrngState | null) {
+  function append(
+    id: number,
+    source: AppendSource,
+    uniform: number | null,
+    prngBefore: PrngState | null,
+  ) {
     validateId(id)
     const info = probabilityInfo(id)
     const position = tokens.value.length
@@ -680,7 +752,8 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
   /** Sample exactly one token from the adjusted distribution (greedy if configured). */
   async function sampleOne(source: AppendSource = 'sample'): Promise<number | null> {
     if (!(await ensureResult())) {
-      if (!inferenceError.value) notify('warning', 'No next-token distribution available for this context.')
+      if (!inferenceError.value)
+        notify('warning', 'No next-token distribution available for this context.')
       return null
     }
     const a = adjusted.value
@@ -720,6 +793,7 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     autoRunning.value = true
     stopRequested = false
     autoGenerated.value = 0
+    autoStartIndex.value = tokens.value.length
     autoStopReason.value = null
     autoStartedAt.value = performance.now()
     autoTokensPerSecond.value = null
@@ -728,7 +802,9 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
       while (!stopRequested && autoGenerated.value < max) {
         const id = await sampleOne('auto')
         if (id === null) {
-          autoStopReason.value = inferenceError.value ? `Inference error: ${inferenceError.value.message}` : 'No distribution available'
+          autoStopReason.value = inferenceError.value
+            ? `Inference error: ${inferenceError.value.message}`
+            : 'No distribution available'
           break
         }
         autoGenerated.value++
@@ -744,7 +820,10 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
           break
         }
       }
-      if (!autoStopReason.value) autoStopReason.value = stopRequested ? 'Stopped by user' : `Reached maximum of ${max} tokens`
+      if (!autoStopReason.value)
+        autoStopReason.value = stopRequested
+          ? 'Stopped by user'
+          : `Reached maximum of ${max} tokens`
       // Compute the distribution for the final context so the user can continue manually.
       if (!stopRequested) void runInference()
     } finally {
@@ -863,7 +942,11 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
       file,
       tree,
       modelInfo.value && tokenizer.value
-        ? { identity: modelInfo.value.identity, logitsSize: modelInfo.value.logitsSize, tokenizerFingerprint: tokenizer.value.fingerprint }
+        ? {
+            identity: modelInfo.value.identity,
+            logitsSize: modelInfo.value.logitsSize,
+            tokenizerFingerprint: tokenizer.value.fingerprint,
+          }
         : null,
     )
     importReport.value = report
@@ -925,6 +1008,7 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     autoStartedAt,
     autoTokensPerSecond,
     autoStopReason,
+    autoStartIndex,
     lastPick,
     notices,
     stopTokenIds,

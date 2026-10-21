@@ -29,11 +29,17 @@ function packageRoot(req: NodeJS.Require, name: string): string {
   return dir
 }
 function readPkg(dir: string): { name: string; version: string } {
-  return JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8')) as { name: string; version: string }
+  return JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8')) as {
+    name: string
+    version: string
+  }
 }
 const transformersDir = packageRoot(require, '@huggingface/transformers')
 // Use the exact onnxruntime-web that Transformers.js itself resolves.
-const ortDir = packageRoot(createRequire(path.join(transformersDir, 'package.json')), 'onnxruntime-web')
+const ortDir = packageRoot(
+  createRequire(path.join(transformersDir, 'package.json')),
+  'onnxruntime-web',
+)
 const ortPkg = readPkg(ortDir)
 const transformersPkg = readPkg(transformersDir)
 
@@ -58,7 +64,10 @@ function selfHostOrtRuntime(): Plugin {
         const file = url.slice(prefix.length)
         if (!(ORT_FILES as readonly string[]).includes(file)) return next()
         const full = path.join(ortDir, 'dist', file)
-        res.setHeader('Content-Type', file.endsWith('.wasm') ? 'application/wasm' : 'text/javascript')
+        res.setHeader(
+          'Content-Type',
+          file.endsWith('.wasm') ? 'application/wasm' : 'text/javascript',
+        )
         res.setHeader('Content-Length', String(statSync(full).size))
         createReadStream(full).pipe(res)
       })

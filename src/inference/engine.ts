@@ -50,7 +50,12 @@ export interface LoadResult {
   info: LoadedModelInfo
   tokenizer: TokenizerSnapshot
   /** Sampling defaults suggested by generation_config.json, if any. */
-  suggestedSampling: { temperature?: number; topK?: number; topP?: number; repetitionPenalty?: number } | null
+  suggestedSampling: {
+    temperature?: number
+    topK?: number
+    topP?: number
+    repetitionPenalty?: number
+  } | null
 }
 
 export interface ForwardOptions {
@@ -78,7 +83,10 @@ export interface InferenceEngine {
   load(request: LoadRequest, onProgress: (e: ProgressEvent) => void): Promise<LoadResult>
   tokenize(text: string, addSpecialTokens: boolean): Promise<{ ids: number[]; ms: number }>
   decode(ids: number[]): Promise<string>
-  applyChatTemplate(messages: ChatMessage[], addGenerationPrompt: boolean): Promise<{ ids: number[]; text: string }>
+  applyChatTemplate(
+    messages: ChatMessage[],
+    addGenerationPrompt: boolean,
+  ): Promise<{ ids: number[]; text: string }>
   forward(ids: number[], options: ForwardOptions): Promise<ForwardOutput>
   unload(): Promise<void>
   /** Permanently stop the engine (terminates the worker). */
@@ -112,18 +120,52 @@ export function classifyError(err: unknown): EngineError {
   const message = err instanceof Error ? err.message : String(err)
   const m = message.toLowerCase()
   if (/unsupported model type|not supported|unknown model class|unrecognized/.test(m))
-    return new EngineError(message, 'unsupported-architecture', 'This architecture is not supported by Transformers.js as a causal language model.')
-  if (/could not locate file|file was not found|404|not found locally|missing required file/.test(m))
-    return new EngineError(message, 'missing-file', 'A required model file is missing. Check the file list and try again.')
+    return new EngineError(
+      message,
+      'unsupported-architecture',
+      'This architecture is not supported by Transformers.js as a causal language model.',
+    )
+  if (
+    /could not locate file|file was not found|404|not found locally|missing required file/.test(m)
+  )
+    return new EngineError(
+      message,
+      'missing-file',
+      'A required model file is missing. Check the file list and try again.',
+    )
   if (/quota|storage/.test(m) && /exceed|full|quota/.test(m))
-    return new EngineError(message, 'quota', 'Browser storage is full. Remove cached models in the Model panel, or load without caching.')
-  if (/out of memory|oom|allocation failed|cannot allocate|memory access out of bounds|array buffer allocation|rangeerror: array buffer/.test(m))
-    return new EngineError(message, 'out-of-memory', 'The model did not fit in memory. Try a smaller model or a more aggressively quantized variant (q4/q4f16).')
+    return new EngineError(
+      message,
+      'quota',
+      'Browser storage is full. Remove cached models in the Model panel, or load without caching.',
+    )
+  if (
+    /out of memory|oom|allocation failed|cannot allocate|memory access out of bounds|array buffer allocation|rangeerror: array buffer/.test(
+      m,
+    )
+  )
+    return new EngineError(
+      message,
+      'out-of-memory',
+      'The model did not fit in memory. Try a smaller model or a more aggressively quantized variant (q4/q4f16).',
+    )
   if (/failed to fetch|networkerror|network error|load failed|err_|aborted|timeout/.test(m))
-    return new EngineError(message, 'network', 'The download failed or was interrupted. Check your connection and retry; completed files are cached.')
+    return new EngineError(
+      message,
+      'network',
+      'The download failed or was interrupted. Check your connection and retry; completed files are cached.',
+    )
   if (/webgpu|gpu|adapter|device lost|jsep|wgsl/.test(m))
-    return new EngineError(message, 'backend', 'The WebGPU backend failed. Try the WASM/CPU backend instead.')
+    return new EngineError(
+      message,
+      'backend',
+      'The WebGPU backend failed. Try the WASM/CPU backend instead.',
+    )
   if (/wasm|webassembly|instantiate/.test(m))
-    return new EngineError(message, 'backend', 'WebAssembly initialization failed. Your browser may block WASM or lack SIMD support.')
+    return new EngineError(
+      message,
+      'backend',
+      'WebAssembly initialization failed. Your browser may block WASM or lack SIMD support.',
+    )
   return new EngineError(message, 'unknown')
 }

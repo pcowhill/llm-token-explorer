@@ -56,7 +56,11 @@ export interface HistoryTree {
   nextId: number
 }
 
-export function createTree(tokens: TokenId[] = [], modelIdentity: string | null = null, prngState: PrngState | null = null): HistoryTree {
+export function createTree(
+  tokens: TokenId[] = [],
+  modelIdentity: string | null = null,
+  prngState: PrngState | null = null,
+): HistoryTree {
   const root: HistoryNode = {
     id: 'n0',
     parentId: null,
@@ -88,7 +92,11 @@ function sameTokens(a: readonly number[], b: readonly number[]): boolean {
   return true
 }
 
-function addChild(tree: HistoryTree, parent: HistoryNode, node: Omit<HistoryNode, 'id' | 'children' | 'preferredChild' | 'parentId' | 'createdAt'>): HistoryNode {
+function addChild(
+  tree: HistoryTree,
+  parent: HistoryNode,
+  node: Omit<HistoryNode, 'id' | 'children' | 'preferredChild' | 'parentId' | 'createdAt'>,
+): HistoryNode {
   const id = `n${tree.nextId++}`
   const full: HistoryNode = {
     ...node,
@@ -143,7 +151,12 @@ export function appendToken(
 export function commitEdit(
   tree: HistoryTree,
   tokens: TokenId[],
-  meta: { modelIdentity: string | null; prngState: PrngState | null; label: string; coalesce?: boolean },
+  meta: {
+    modelIdentity: string | null
+    prngState: PrngState | null
+    label: string
+    coalesce?: boolean
+  },
 ): HistoryNode {
   const node = current(tree)
   if (sameTokens(node.tokens, tokens)) return node
@@ -152,7 +165,12 @@ export function commitEdit(
     node.label = meta.label
     return node
   }
-  if (node.kind === 'root' && node.children.length === 0 && node.tokens.length === 0 && (meta.coalesce ?? true)) {
+  if (
+    node.kind === 'root' &&
+    node.children.length === 0 &&
+    node.tokens.length === 0 &&
+    (meta.coalesce ?? true)
+  ) {
     // An empty, unused root simply becomes the initial context.
     node.tokens = [...tokens]
     node.label = meta.label
@@ -256,7 +274,9 @@ export function flatten(tree: HistoryTree): FlatNode[] {
       branchIndex,
       branchCount,
     })
-    node.children.forEach((c, i) => visit(c, node.children.length > 1 ? depth + 1 : depth, i, node.children.length))
+    node.children.forEach((c, i) =>
+      visit(c, node.children.length > 1 ? depth + 1 : depth, i, node.children.length),
+    )
   }
   visit(tree.rootId, 0, 0, 1)
   return out

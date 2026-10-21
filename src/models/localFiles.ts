@@ -49,7 +49,9 @@ export interface LocalLayout {
 export const REQUIRED_FILES = ['config.json', 'tokenizer.json', 'tokenizer_config.json'] as const
 export const OPTIONAL_FILES = ['generation_config.json', 'special_tokens_map.json'] as const
 
-const SUFFIX_TO_DTYPE: [string, ModelDtype][] = (Object.entries(DTYPE_FILE_SUFFIX) as [ModelDtype, string][])
+const SUFFIX_TO_DTYPE: [string, ModelDtype][] = (
+  Object.entries(DTYPE_FILE_SUFFIX) as [ModelDtype, string][]
+)
   .filter(([, s]) => s !== '')
   .map(([d, s]) => [s, d] as [string, ModelDtype])
   .sort((a, b) => b[0].length - a[0].length)
@@ -58,7 +60,9 @@ export function normalizePath(p: string): string {
   return p.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
 }
 
-export function parseOnnxFileName(fileName: string): { baseName: string; dtype: ModelDtype } | null {
+export function parseOnnxFileName(
+  fileName: string,
+): { baseName: string; dtype: ModelDtype } | null {
   if (!fileName.endsWith('.onnx')) return null
   const stem = fileName.slice(0, -'.onnx'.length)
   for (const [suffix, dtype] of SUFFIX_TO_DTYPE) {
@@ -92,7 +96,9 @@ export function analyzeLocalFiles(input: LocalFileEntry[]): LocalLayout {
     if (!files.has(req)) errors.push(`Missing required file: ${req}`)
   }
   if (!files.has('generation_config.json'))
-    warnings.push('generation_config.json not found: stop tokens will fall back to the tokenizer’s EOS token.')
+    warnings.push(
+      'generation_config.json not found: stop tokens will fall back to the tokenizer’s EOS token.',
+    )
 
   const candidates: OnnxCandidate[] = []
   for (const f of files.values()) {
@@ -102,7 +108,9 @@ export function analyzeLocalFiles(input: LocalFileEntry[]): LocalLayout {
     const parsed = parseOnnxFileName(name)
     if (!parsed) continue
     if (subfolder.includes('/')) {
-      warnings.push(`Ignoring ${f.path}: ONNX files must be in the model root or one subfolder (usually onnx/).`)
+      warnings.push(
+        `Ignoring ${f.path}: ONNX files must be in the model root or one subfolder (usually onnx/).`,
+      )
       continue
     }
     let chunks = 0
@@ -126,7 +134,8 @@ export function analyzeLocalFiles(input: LocalFileEntry[]): LocalLayout {
     })
   }
   candidates.sort((a, b) => a.totalBytes - b.totalBytes)
-  if (candidates.length === 0) errors.push('No .onnx weight file found (expected e.g. onnx/model_quantized.onnx).')
+  if (candidates.length === 0)
+    errors.push('No .onnx weight file found (expected e.g. onnx/model_quantized.onnx).')
   for (const c of candidates) {
     if (c.missingExternalData.length)
       warnings.push(
@@ -135,7 +144,9 @@ export function analyzeLocalFiles(input: LocalFileEntry[]): LocalLayout {
   }
   for (const f of files.keys()) {
     if (/\.(safetensors|bin|gguf|pt|pth|h5)$/i.test(f))
-      warnings.push(`${f} is not an ONNX file and will be ignored (only ONNX weights can run in the browser).`)
+      warnings.push(
+        `${f} is not an ONNX file and will be ignored (only ONNX weights can run in the browser).`,
+      )
   }
   return { root, files, candidates, errors, warnings }
 }
@@ -149,10 +160,48 @@ export interface LocalConfigCheck {
 
 /** Architectures known to load as AutoModelForCausalLM in Transformers.js decoder-only mode. */
 export const KNOWN_CAUSAL_LM_TYPES = new Set([
-  'gpt2', 'gptj', 'gpt_neo', 'gpt_neox', 'gpt_bigcode', 'codegen', 'llama', 'mistral', 'qwen2', 'qwen3', 'qwen3_moe',
-  'phi', 'phi3', 'gemma', 'gemma2', 'gemma3_text', 'olmo', 'olmo2', 'stablelm', 'falcon', 'bloom', 'mpt', 'opt',
-  'cohere', 'granite', 'smollm3', 'exaone', 'helium', 'glm', 'ernie4_5', 'lfm2', 'arcee', 'apertus', 'afmoe',
-  'cohere2', 'mobilellm', 'olmo3', 'starcoder2', 'trillion', 'nanochat', 'hunyuan_v1_dense', 'falcon_h1',
+  'gpt2',
+  'gptj',
+  'gpt_neo',
+  'gpt_neox',
+  'gpt_bigcode',
+  'codegen',
+  'llama',
+  'mistral',
+  'qwen2',
+  'qwen3',
+  'qwen3_moe',
+  'phi',
+  'phi3',
+  'gemma',
+  'gemma2',
+  'gemma3_text',
+  'olmo',
+  'olmo2',
+  'stablelm',
+  'falcon',
+  'bloom',
+  'mpt',
+  'opt',
+  'cohere',
+  'granite',
+  'smollm3',
+  'exaone',
+  'helium',
+  'glm',
+  'ernie4_5',
+  'lfm2',
+  'arcee',
+  'apertus',
+  'afmoe',
+  'cohere2',
+  'mobilellm',
+  'olmo3',
+  'starcoder2',
+  'trillion',
+  'nanochat',
+  'hunyuan_v1_dense',
+  'falcon_h1',
 ])
 
 export function checkConfigJson(text: string): LocalConfigCheck {
@@ -166,13 +215,23 @@ export function checkConfigJson(text: string): LocalConfigCheck {
   }
   const modelType = typeof cfg.model_type === 'string' ? cfg.model_type : null
   const textCfg = (cfg.text_config ?? {}) as Record<string, unknown>
-  const vocab = typeof cfg.vocab_size === 'number' ? cfg.vocab_size : typeof textCfg.vocab_size === 'number' ? textCfg.vocab_size : null
+  const vocab =
+    typeof cfg.vocab_size === 'number'
+      ? cfg.vocab_size
+      : typeof textCfg.vocab_size === 'number'
+        ? textCfg.vocab_size
+        : null
   if (!modelType) errors.push('config.json has no model_type')
   else if (!KNOWN_CAUSAL_LM_TYPES.has(modelType))
-    warnings.push(`model_type "${modelType}" is not in this app's list of tested decoder-only architectures; loading may fail.`)
+    warnings.push(
+      `model_type "${modelType}" is not in this app's list of tested decoder-only architectures; loading may fail.`,
+    )
   const archs = Array.isArray(cfg.architectures) ? (cfg.architectures as string[]) : []
   if (archs.length && !archs.some((a) => /ForCausalLM|LMHeadModel/.test(a)))
     warnings.push(`architectures ${archs.join(', ')} does not look like a causal language model.`)
-  if (vocab === null) warnings.push('config.json has no vocab_size; the logits size will be taken from the model output.')
+  if (vocab === null)
+    warnings.push(
+      'config.json has no vocab_size; the logits size will be taken from the model output.',
+    )
   return { modelType, vocabSize: vocab, errors, warnings }
 }

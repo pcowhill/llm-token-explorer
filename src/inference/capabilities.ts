@@ -2,7 +2,8 @@ import type { Capabilities } from '@/types'
 
 /** Minimal module using SIMD (i8x16.splat + i8x16.popcnt), from wasm-feature-detect. */
 const SIMD_PROBE = new Uint8Array([
-  0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11,
+  0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15,
+  253, 98, 11,
 ])
 
 interface GpuAdapterLike {
@@ -66,7 +67,8 @@ export async function detectCapabilities(): Promise<Capabilities> {
     wasm,
     wasmSimd,
     crossOriginIsolated: typeof crossOriginIsolated !== 'undefined' ? crossOriginIsolated : false,
-    hardwareConcurrency: typeof nav.hardwareConcurrency === 'number' ? nav.hardwareConcurrency : null,
+    hardwareConcurrency:
+      typeof nav.hardwareConcurrency === 'number' ? nav.hardwareConcurrency : null,
     deviceMemoryGb: typeof nav.deviceMemory === 'number' ? nav.deviceMemory : null,
     cacheStorage: typeof caches !== 'undefined',
     opfs,

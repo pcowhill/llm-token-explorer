@@ -66,9 +66,20 @@ export const CATALOG: CatalogModel[] = [
         backends: ['webgpu'],
         defaultFor: 'webgpu',
       },
-      { dtype: 'fp16', files: ['onnx/model_fp16.onnx'], sizeBytes: 269_900_000, backends: ['webgpu'] },
-      { dtype: 'fp32', files: ['onnx/model.onnx'], sizeBytes: 538_900_000, backends: ['wasm', 'webgpu'] },
+      {
+        dtype: 'fp16',
+        files: ['onnx/model_fp16.onnx'],
+        sizeBytes: 269_900_000,
+        backends: ['webgpu'],
+      },
+      {
+        dtype: 'fp32',
+        files: ['onnx/model.onnx'],
+        sizeBytes: 538_900_000,
+        backends: ['wasm', 'webgpu'],
+      },
     ],
+    supportFilesBytes: 3_527_558,
     memoryEstimateBytes: { wasm: 400 * MB, webgpu: 350 * MB },
     verification: {
       status: 'verified',
@@ -111,7 +122,8 @@ export const CATALOG: CatalogModel[] = [
       {
         id: 'chat',
         label: 'Chat (real chat template)',
-        description: 'Rendered with the tokenizer’s chat template, ending with the assistant generation prefix.',
+        description:
+          'Rendered with the tokenizer’s chat template, ending with the assistant generation prefix.',
         kind: 'chat',
         messages: [{ role: 'user', content: 'Give me one fun fact about octopuses.' }],
         addGenerationPrompt: true,
@@ -162,8 +174,14 @@ export const CATALOG: CatalogModel[] = [
         backends: ['webgpu'],
         defaultFor: 'webgpu',
       },
-      { dtype: 'fp16', files: ['onnx/model_fp16.onnx'], sizeBytes: 997_400_000, backends: ['webgpu'] },
+      {
+        dtype: 'fp16',
+        files: ['onnx/model_fp16.onnx'],
+        sizeBytes: 997_400_000,
+        backends: ['webgpu'],
+      },
     ],
+    supportFilesBytes: 7_040_442,
     memoryEstimateBytes: { wasm: 1200 * MB, webgpu: 900 * MB },
     verification: {
       status: 'verified',
@@ -206,7 +224,8 @@ export const CATALOG: CatalogModel[] = [
       {
         id: 'chat',
         label: 'Chat (real chat template)',
-        description: 'Rendered with the tokenizer’s chat template (adds the default Qwen system prompt).',
+        description:
+          'Rendered with the tokenizer’s chat template (adds the default Qwen system prompt).',
         kind: 'chat',
         messages: [{ role: 'user', content: 'Translate "good morning" into French.' }],
         addGenerationPrompt: true,
@@ -256,8 +275,14 @@ export const CATALOG: CatalogModel[] = [
         backends: ['webgpu'],
         defaultFor: 'webgpu',
       },
-      { dtype: 'fp32', files: ['onnx/model.onnx'], sizeBytes: 498_100_000, backends: ['wasm', 'webgpu'] },
+      {
+        dtype: 'fp32',
+        files: ['onnx/model.onnx'],
+        sizeBytes: 498_100_000,
+        backends: ['wasm', 'webgpu'],
+      },
     ],
+    supportFilesBytes: 2_109_139,
     memoryEstimateBytes: { wasm: 700 * MB, webgpu: 600 * MB },
     verification: {
       status: 'verified',
@@ -302,11 +327,7 @@ export const CATALOG: CatalogModel[] = [
         label: 'Special-token demo',
         description: 'Two documents separated by the real <|endoftext|> token ID.',
         kind: 'parts',
-        parts: [
-          { text: 'The end.' },
-          { special: '<|endoftext|>' },
-          { text: 'Once upon a time' },
-        ],
+        parts: [{ text: 'The end.' }, { special: '<|endoftext|>' }, { text: 'Once upon a time' }],
       },
     ],
   },
@@ -333,7 +354,12 @@ export function fileUrl(repo: string, revision: string, file: string): string {
 }
 
 /** Files Transformers.js fetches for a causal LM besides the ONNX weights. */
-export const SUPPORT_FILES = ['config.json', 'generation_config.json', 'tokenizer.json', 'tokenizer_config.json']
+export const SUPPORT_FILES = [
+  'config.json',
+  'generation_config.json',
+  'tokenizer.json',
+  'tokenizer_config.json',
+]
 
 export function formatBytes(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return '—'

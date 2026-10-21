@@ -35,10 +35,16 @@ export function cacheSupported(): boolean {
   return typeof caches !== 'undefined'
 }
 
-export function parseCacheUrl(url: string): { repo: string; revision: string; path: string } | null {
+export function parseCacheUrl(
+  url: string,
+): { repo: string; revision: string; path: string } | null {
   const m = RESOLVE_RE.exec(url)
   if (!m) return null
-  return { repo: m[1] as string, revision: decodeURIComponent(m[2] as string), path: m[3] as string }
+  return {
+    repo: m[1] as string,
+    revision: decodeURIComponent(m[2] as string),
+    path: m[3] as string,
+  }
 }
 
 async function entrySize(cache: Cache, req: Request): Promise<number | null> {
@@ -62,7 +68,8 @@ export async function listCachedModels(): Promise<CachedModel[]> {
     const parsed = parseCacheUrl(req.url)
     if (!parsed) continue
     const k = `${parsed.repo}@${parsed.revision}`
-    if (!groups.has(k)) groups.set(k, { repo: parsed.repo, revision: parsed.revision, files: [], totalBytes: 0 })
+    if (!groups.has(k))
+      groups.set(k, { repo: parsed.repo, revision: parsed.revision, files: [], totalBytes: 0 })
     const g = groups.get(k)!
     const bytes = await entrySize(cache, req)
     g.files.push({ url: req.url, path: parsed.path, bytes })
@@ -74,7 +81,9 @@ export async function listCachedModels(): Promise<CachedModel[]> {
 export async function isFileCached(repo: string, revision: string, path: string): Promise<boolean> {
   if (!cacheSupported()) return false
   const cache = await caches.open(MODEL_CACHE_NAME)
-  const res = await cache.match(`https://huggingface.co/${repo}/resolve/${encodeURIComponent(revision)}/${path}`)
+  const res = await cache.match(
+    `https://huggingface.co/${repo}/resolve/${encodeURIComponent(revision)}/${path}`,
+  )
   return !!res
 }
 

@@ -41,7 +41,11 @@ export class WorkerEngineClient implements InferenceEngine {
     const w = this.factory()
     w.addEventListener('message', (ev: MessageEvent<WorkerMessage>) => this.onMessage(ev.data))
     w.addEventListener('error', (ev) => {
-      const err = new EngineError(`Inference worker crashed: ${ev.message || 'unknown error'}`, 'backend', 'Reload the model. If this repeats, try the WASM backend or a smaller model.')
+      const err = new EngineError(
+        `Inference worker crashed: ${ev.message || 'unknown error'}`,
+        'backend',
+        'Reload the model. If this repeats, try the WASM backend or a smaller model.',
+      )
       for (const p of this.pending.values()) p.reject(err)
       this.pending.clear()
       this.worker?.terminate()
@@ -61,7 +65,14 @@ export class WorkerEngineClient implements InferenceEngine {
     }
     this.pending.delete(msg.id)
     if (msg.ok) p.resolve(msg.value)
-    else p.reject(new EngineError(msg.error.message, msg.error.errorKind as EngineError['kind'], msg.error.hint))
+    else
+      p.reject(
+        new EngineError(
+          msg.error.message,
+          msg.error.errorKind as EngineError['kind'],
+          msg.error.hint,
+        ),
+      )
   }
 
   private call<T>(req: WorkerRequest, onProgress?: (e: ProgressEvent) => void): Promise<T> {
@@ -89,7 +100,10 @@ export class WorkerEngineClient implements InferenceEngine {
     return this.call({ type: 'decode', ids })
   }
 
-  applyChatTemplate(messages: ChatMessage[], addGenerationPrompt: boolean): Promise<{ ids: number[]; text: string }> {
+  applyChatTemplate(
+    messages: ChatMessage[],
+    addGenerationPrompt: boolean,
+  ): Promise<{ ids: number[]; text: string }> {
     return this.call({ type: 'chatTemplate', messages, addGenerationPrompt })
   }
 

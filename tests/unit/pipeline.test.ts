@@ -57,13 +57,21 @@ describe('adjustDistribution', () => {
     // p^(1/T) = p^2 = [.25,.0625,.015625,.00390625,.00390625] sum=.3359375
     const a = adjustDistribution(p, S({ temperature: 0.5 }))
     const sum = 0.3359375
-    close(a.probs, [0.25 / sum, 0.0625 / sum, 0.015625 / sum, 0.00390625 / sum, 0.00390625 / sum], 6)
+    close(
+      a.probs,
+      [0.25 / sum, 0.0625 / sum, 0.015625 / sum, 0.00390625 / sum, 0.00390625 / sum],
+      6,
+    )
   })
 
   it('temperature 2 flattens the distribution (sqrt)', () => {
     const r = [0.5, 0.25, 0.125, 0.0625, 0.0625].map(Math.sqrt)
     const sum = r.reduce((x, y) => x + y)
-    close(adjustDistribution(p, S({ temperature: 2 })).probs, r.map((v) => v / sum), 6)
+    close(
+      adjustDistribution(p, S({ temperature: 2 })).probs,
+      r.map((v) => v / sum),
+      6,
+    )
   })
 
   it('temperature 0 takes the explicit greedy path (no division by zero)', () => {
@@ -96,7 +104,11 @@ describe('adjustDistribution', () => {
     expect(adjustDistribution(p, S({ topP: 0.75 })).keptCount).toBe(2) // exactly reaches .75
     expect(adjustDistribution(p, S({ topP: 0.76 })).keptCount).toBe(3)
     expect(adjustDistribution(p, S({ topP: 0.01 })).keptCount).toBe(1) // always ≥ 1
-    close(adjustDistribution(p, S({ topP: 0.8 })).probs, [0.5 / 0.875, 0.25 / 0.875, 0.125 / 0.875, 0, 0], 6)
+    close(
+      adjustDistribution(p, S({ topP: 0.8 })).probs,
+      [0.5 / 0.875, 0.25 / 0.875, 0.125 / 0.875, 0, 0],
+      6,
+    )
   })
 
   it('min-p keeps tokens with p >= min_p * p_max', () => {
@@ -135,7 +147,12 @@ describe('adjustDistribution', () => {
     const big = new Float32Array(50_000)
     for (let i = 0; i < big.length; i++) big[i] = Math.sin(i * 12.9898) * 15
     const bp = prepareLogits(big)
-    for (const s of [S(), S({ temperature: 0.2 }), S({ temperature: 3, topK: 40 }), S({ topP: 0.9, minP: 0.05 })]) {
+    for (const s of [
+      S(),
+      S({ temperature: 0.2 }),
+      S({ temperature: 3, topK: 40 }),
+      S({ topP: 0.9, minP: 0.05 }),
+    ]) {
       const a = adjustDistribution(bp, s)
       expect(Math.abs(stableSum(a.probs) - 1)).toBeLessThan(1e-9)
       expect(a.probs.every((x) => x >= 0 && Number.isFinite(x))).toBe(true)
@@ -168,7 +185,11 @@ describe('sampleFromAdjusted', () => {
     const counts = [0, 0, 0, 0, 0]
     const N = 20000
     for (let i = 0; i < N; i++) counts[sampleFromAdjusted(a, (i + 0.5) / N)]!++
-    close(counts.map((c) => c / N), [0.5, 0.25, 0.125, 0.0625, 0.0625], 3)
+    close(
+      counts.map((c) => c / N),
+      [0.5, 0.25, 0.125, 0.0625, 0.0625],
+      3,
+    )
   })
 })
 

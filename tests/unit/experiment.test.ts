@@ -29,7 +29,16 @@ function sample() {
   undo(t)
   appendToken(
     t,
-    { tokenId: 99, source: 'manual', originalProbability: null, adjustedProbability: null, logit: null, sampling: null, prngBefore: null, uniform: null },
+    {
+      tokenId: 99,
+      source: 'manual',
+      originalProbability: null,
+      adjustedProbability: null,
+      logit: null,
+      sampling: null,
+      prngBefore: null,
+      uniform: null,
+    },
     { modelIdentity: 'hub:x@y#q8', prngState: null, label: 'Picked 99' },
   )
   return t
@@ -38,7 +47,14 @@ function sample() {
 const serialize = () =>
   serializeExperiment({
     tree: sample(),
-    model: { identity: 'hub:x@y#q8', displayName: 'X', source: 'catalog', catalogKey: 'x', logitsSize: 60000, tokenizerFingerprint: 'abcd' },
+    model: {
+      identity: 'hub:x@y#q8',
+      displayName: 'X',
+      source: 'catalog',
+      catalogKey: 'x',
+      logitsSize: 60000,
+      tokenizerFingerprint: 'abcd',
+    },
     sampling: { ...DEFAULT_SAMPLING, seed: 7, temperature: 0.8 },
     generation: { ...DEFAULT_GENERATION, maxNewTokens: 64 },
     appVersion: '1.0.0',
@@ -69,8 +85,12 @@ describe('experiment serialization', () => {
   it('rejects non-JSON and wrong formats', () => {
     expect(() => parseExperiment('not json')).toThrow(ExperimentValidationError)
     expect(() => parseExperiment('[]')).toThrow(/Top level/)
-    expect(() => parseExperiment(JSON.stringify({ ...serialize(), format: 'other' }))).toThrow(/format/)
-    expect(() => parseExperiment(JSON.stringify({ ...serialize(), version: 99 }))).toThrow(/version/)
+    expect(() => parseExperiment(JSON.stringify({ ...serialize(), format: 'other' }))).toThrow(
+      /format/,
+    )
+    expect(() => parseExperiment(JSON.stringify({ ...serialize(), version: 99 }))).toThrow(
+      /version/,
+    )
   })
 
   it('rejects invalid token IDs', () => {
@@ -113,10 +133,18 @@ describe('experiment serialization', () => {
     const { file, tree } = parseExperiment(JSON.stringify(serialize()))
     const none = checkCompatibility(file, tree, null)
     expect(none.messages[0]).toMatch(/created with “X”/)
-    const same = checkCompatibility(file, tree, { identity: 'hub:x@y#q8', logitsSize: 60000, tokenizerFingerprint: 'abcd' })
+    const same = checkCompatibility(file, tree, {
+      identity: 'hub:x@y#q8',
+      logitsSize: 60000,
+      tokenizerFingerprint: 'abcd',
+    })
     expect(same.sameModel).toBe(true)
     expect(same.messages).toEqual([])
-    const other = checkCompatibility(file, tree, { identity: 'other', logitsSize: 1000, tokenizerFingerprint: 'zz' })
+    const other = checkCompatibility(file, tree, {
+      identity: 'other',
+      logitsSize: 1000,
+      tokenizerFingerprint: 'zz',
+    })
     expect(other.sameModel).toBe(false)
     expect(other.sameTokenizer).toBe(false)
     expect(other.outOfRangeIds).toEqual([50256])

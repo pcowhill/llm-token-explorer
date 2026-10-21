@@ -86,6 +86,8 @@ export interface CatalogModel {
   /** Size of the logits / embedding dimension (config.vocab_size). */
   logitsSize: number
   variants: ModelVariant[]
+  /** Bytes of config/tokenizer files downloaded in addition to the weights. */
+  supportFilesBytes: number
   /** Rough working-memory estimate in bytes, per backend, clearly an estimate. */
   memoryEstimateBytes: { wasm: number; webgpu: number }
   verification: VerificationRecord
@@ -97,16 +99,7 @@ export interface CatalogModel {
 
 /** How a special token is used, derived from tokenizer metadata. */
 export type SpecialTokenRole =
-  | 'bos'
-  | 'eos'
-  | 'pad'
-  | 'unk'
-  | 'sep'
-  | 'cls'
-  | 'mask'
-  | 'stop'
-  | 'chat'
-  | 'other'
+  'bos' | 'eos' | 'pad' | 'unk' | 'sep' | 'cls' | 'mask' | 'stop' | 'chat' | 'other'
 
 export interface SpecialTokenInfo {
   id: TokenId
