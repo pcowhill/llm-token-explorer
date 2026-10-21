@@ -360,11 +360,17 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
       return true
     } catch (e) {
       const err = classifyError(e)
-      modelError.value = markRaw(err)
-      if (err.kind !== 'aborted') notify('error', `Loading failed: ${err.message}`)
       // The engine unloads the previous model before loading a new one.
       modelInfo.value = null
       tokenizer.value = null
+      if (err.kind === 'aborted') {
+        // Cancelled by the user (cancelLoad already reported it).
+        modelError.value = null
+        modelStatus.value = 'idle'
+        return false
+      }
+      modelError.value = markRaw(err)
+      notify('error', `Loading failed: ${err.message}`)
       modelStatus.value = 'error'
       return false
     } finally {

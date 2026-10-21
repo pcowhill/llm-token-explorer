@@ -3,6 +3,7 @@ import ModelPanel from '@/components/model/ModelPanel.vue'
 import LocalModelLoader from '@/components/model/LocalModelLoader.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import { CATALOG } from '@/models/catalog'
+import { EngineError } from '@/inference/engine'
 import { makeWorkbench, mountWith, settle } from './helpers'
 
 describe('ModelPanel', () => {
@@ -128,5 +129,25 @@ describe('LocalModelLoader', () => {
     expect(w.get('[data-testid="local-errors"]').text()).toContain('tokenizer.json')
     expect(w.find('[data-testid="local-load"]').exists()).toBe(false)
     w.unmount()
+  })
+})
+
+describe('cancelling a load', () => {
+  it('returns to idle without reporting an error', async () => {
+    const { wb, engine } = await makeWorkbench({ loaded: false })
+    let release: () => void = () => {}
+    engine.load = (req) =>
+      new Promise((_, reject) => {
+        release = () => reject(new EngineError('Cancelled', 'aborted'))
+        void req
+      })
+    const p = wb.loadCatalog('gpt2', { backend: 'wasm', dtype: 'fp16' })
+    await settle(1)
+    expect(wb.modelStatus.value).toBe('loading')
+    wb.cancelLoad()
+    release()
+    await p
+    expect(wb.modelStatus.value).toBe('idle')
+    expect(wb.modelError.value).toBeNull()
   })
 })
