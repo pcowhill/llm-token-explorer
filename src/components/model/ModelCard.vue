@@ -8,9 +8,22 @@ import { chooseDtype } from '@/stores/workbench'
 const props = defineProps<{ model: CatalogModel; backend: Backend; cached: boolean }>()
 const wb = useWorkbench()
 const dtype = ref<ModelDtype>(chooseDtype(props.model, props.backend, wb.capabilities.value))
+/** Set once the user picks a quantization; late capability detection must not override it. */
+const userChoseDtype = ref(false)
 watch(
-  () => [props.backend, wb.capabilities.value] as const,
-  () => (dtype.value = chooseDtype(props.model, props.backend, wb.capabilities.value)),
+  () => wb.capabilities.value,
+  () => {
+    if (!userChoseDtype.value)
+      dtype.value = chooseDtype(props.model, props.backend, wb.capabilities.value)
+  },
+)
+watch(
+  () => props.backend,
+  () => {
+    // A backend switch can make the chosen variant unsupported: re-pick the default.
+    userChoseDtype.value = false
+    dtype.value = chooseDtype(props.model, props.backend, wb.capabilities.value)
+  },
 )
 const variant = computed(
   () => props.model.variants.find((v) => v.dtype === dtype.value) ?? props.model.variants[0]!,
@@ -142,7 +155,11 @@ function load(tokenizerOnly = false) {
     <div class="row small">
       <label>
         Quantization
-        <select v-model="dtype" :aria-label="`Quantization for ${props.model.name}`">
+        <select
+          v-model="dtype"
+          :aria-label="`Quantization for ${props.model.name}`"
+          @change="userChoseDtype = true"
+        >
           <option v-for="v in props.model.variants" :key="v.dtype" :value="v.dtype">
             {{ v.dtype }} — {{ formatBytes(v.sizeBytes) }} ({{ v.backends.join(', ') }})
           </option>

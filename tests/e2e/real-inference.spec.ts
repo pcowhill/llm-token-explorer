@@ -162,7 +162,12 @@ test('a cached model loads and runs fully offline (service worker + Cache Storag
     await page.getByTestId('backend-select').selectOption('wasm')
     await page.getByLabel('Quantization for SmolLM2 135M Instruct').selectOption('q8')
     await page.getByTestId('load-smollm2-135m-instruct').click()
-    await expect(page.getByTestId('model-status')).toHaveText('Ready', { timeout: 600_000 })
+    // Fail fast with the real error instead of waiting for the full timeout.
+    await expect(page.getByTestId('model-status')).toHaveText(/Ready|Load failed/, {
+      timeout: 600_000,
+    })
+    const err = page.getByTestId('model-error')
+    if (await err.isVisible()) throw new Error(`Model load failed: ${await err.textContent()}`)
   }
   await load()
   expect((await state(page)).info?.dtype).toBe('q8')

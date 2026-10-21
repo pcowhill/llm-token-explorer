@@ -5,6 +5,7 @@ import AppHeader from '@/components/AppHeader.vue'
 import { CATALOG } from '@/models/catalog'
 import { EngineError } from '@/inference/engine'
 import { makeWorkbench, mountWith, settle } from './helpers'
+import { FakeEngine } from './fakeEngine'
 
 describe('ModelPanel', () => {
   it('lists every catalog model with verification status, license and size', async () => {
@@ -149,5 +150,22 @@ describe('cancelling a load', () => {
     await p
     expect(wb.modelStatus.value).toBe('idle')
     expect(wb.modelError.value).toBeNull()
+  })
+})
+
+describe('ModelCard quantization choice', () => {
+  it('is not overridden when browser capabilities arrive later', async () => {
+    const { wb } = await makeWorkbench({ loaded: false })
+    wb.capabilities.value = null
+    const w = mountWith(ModelPanel, wb)
+    const select = w.get('select[aria-label="Quantization for SmolLM2 135M Instruct"]')
+    await select.setValue('q8')
+    await select.trigger('change')
+    wb.capabilities.value = { ...(await new FakeEngine().capabilities()) }
+    await settle()
+    expect((select.element as HTMLSelectElement).value).toBe('q8')
+    await w.get('[data-testid="load-smollm2-135m-instruct"]').trigger('click')
+    await settle()
+    w.unmount()
   })
 })
