@@ -1,11 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { Backend, CatalogModel, ModelDtype } from '@/types'
-import { DTYPE_DESCRIPTIONS, SUPPORT_FILES, fileUrl, formatBytes, repoUrl } from '@/models/catalog'
+import type { Backend, CatalogModel, ModelDtype, ModelVariant } from '@/types'
+import {
+  DTYPE_DESCRIPTIONS,
+  SUPPORT_FILES,
+  fileUrl,
+  formatBytes,
+  notVerifiedInCi,
+  repoUrl,
+  supportsBackend,
+} from '@/models/catalog'
+import type { CachedModel } from '@/models/cacheStorage'
+import { repoCacheStatus } from '@/models/variants'
 import { useWorkbench } from '@/composables/useWorkbench'
 import { chooseDtype } from '@/stores/workbench'
 
-const props = defineProps<{ model: CatalogModel; backend: Backend; cached: boolean }>()
+const props = defineProps<{ model: CatalogModel; backend: Backend; cached: CachedModel[] }>()
 const wb = useWorkbench()
 const dtype = ref<ModelDtype>(chooseDtype(props.model, props.backend, wb.capabilities.value))
 /** Set once the user picks a quantization; late capability detection must not override it. */
@@ -28,6 +38,8 @@ watch(
 const variant = computed(
   () => props.model.variants.find((v) => v.dtype === dtype.value) ?? props.model.variants[0]!,
 )
+const backendName = (b: Backend) => (b === 'webgpu' ? 'WebGPU' : 'WASM')
+const runsHere = computed(() => supportsBackend(props.model, props.backend))
 const supported = computed(() => variant.value.backends.includes(props.backend))
 const f16Problem = computed(
   () =>
@@ -35,7 +47,42 @@ const f16Problem = computed(
     dtype.value.includes('16') &&
     wb.capabilities.value?.webgpuAdapter?.shaderF16 === false,
 )
-const memEstimate = computed(() => props.model.memoryEstimateBytes[props.backend])
+
+// ------------------------------------------------------------- cache state
+const cacheStatus = computed(() =>
+  repoCacheStatus(props.cached, props.model.repo, props.model.revision, props.model.variants),
+)
+const variantCached = (v: ModelVariant) => cacheStatus.value.dtypes[v.dtype] === 'cached'
+/** Bytes still to download for a variant (weights + support files not yet cached). */
+const missingBytes = (v: ModelVariant) =>
+  (cacheStatus.value.weightsCached[v.dtype] ? 0 : v.sizeBytes) +
+  (cacheStatus.value.supportCached ? 0 : props.model.supportFilesBytes)
+const selectedCached = computed(() => variantCached(variant.value))
+const cachedBadge = computed(() => {
+  const d = cacheStatus.value.cachedDtypes
+  if (d.length) return `Cached: ${d.join(', ')}`
+  return cacheStatus.value.supportCached ? 'Cached: tokenizer' : ''
+})
+function optionLabel(v: ModelVariant): string {
+  const state = cacheStatus.value.dtypes[v.dtype]
+  const mark =
+    state === 'cached'
+      ? '✓ cached'
+      : `↓ ${formatBytes(missingBytes(v))}${state === 'partial' ? ' (partly cached)' : ''}`
+  const notes: string[] = []
+  if (!v.backends.includes(props.backend))
+    notes.push(`${v.backends.map(backendName).join('/')} only`)
+  else if (notVerifiedInCi(v.dtype, props.backend)) notes.push('not verified in CI')
+  return `${v.dtype} — ${mark}${notes.length ? ` · ${notes.join(' · ')}` : ''}`
+}
+
+/** Backend the facts refer to: the current one, or the one the model needs. */
+const factsBackend = computed<Backend>(() =>
+  runsHere.value ? props.backend : props.backend === 'wasm' ? 'webgpu' : 'wasm',
+)
+const memEstimate = computed(
+  () => variant.value.memoryEstimateBytes ?? props.model.memoryEstimateBytes[factsBackend.value],
+)
 const resourceWarning = computed(() => {
   const caps = wb.capabilities.value
   const warnings: string[] = []
@@ -48,15 +95,31 @@ const resourceWarning = computed(() => {
     warnings.push(
       'The weights are large relative to this GPU adapter’s buffer limits; loading may fail.',
     )
-  if (variant.value.sizeBytes > 400e6)
-    warnings.push(`This is a large download (${formatBytes(variant.value.sizeBytes)}).`)
+  if (!selectedCached.value && variant.value.sizeBytes > 400e6)
+    warnings.push(`This is a large download (${formatBytes(missingBytes(variant.value))}).`)
   return warnings
 })
+const excludedHere = computed(() =>
+  (props.model.excludedVariants ?? []).filter((e) => e.backends.includes(props.backend)),
+)
+
 const confirming = ref(false)
 const isActive = computed(
   () => wb.activeCatalogKey.value === props.model.key && wb.modelStatus.value === 'ready',
 )
 const busy = computed(() => wb.modelStatus.value === 'loading')
+const loadLabel = computed(() => {
+  if (!runsHere.value) return `Needs ${props.backend === 'wasm' ? 'WebGPU' : 'WASM'}`
+  const info = wb.modelInfo.value
+  if (isActive.value && info?.dtype === dtype.value && info.backend === props.backend)
+    return 'Reload (cached)'
+  return selectedCached.value
+    ? 'Load model (cached)'
+    : `Download & load (${formatBytes(missingBytes(variant.value))})`
+})
+const canSwitchToGpu = computed(
+  () => props.backend === 'wasm' && !runsHere.value && !!wb.capabilities.value?.webgpu,
+)
 
 const verificationClass = computed(
   () =>
@@ -67,6 +130,10 @@ const verificationClass = computed(
       experimental: 'badge-danger',
     })[props.model.verification.status],
 )
+
+function onDtypeChange() {
+  userChoseDtype.value = true
+}
 
 function load(tokenizerOnly = false) {
   if (!tokenizerOnly && resourceWarning.value.length && !confirming.value) {
@@ -80,16 +147,23 @@ function load(tokenizerOnly = false) {
     tokenizerOnly,
   })
 }
+
+function switchToGpu() {
+  wb.backendPref.value = 'webgpu'
+}
 </script>
 
 <template>
   <article
     class="model-card card"
-    :class="{ active: isActive }"
+    :class="{ active: isActive, featured: !!props.model.featured }"
     :data-testid="`model-card-${props.model.key}`"
   >
     <header class="row">
       <h3>{{ props.model.name }}</h3>
+      <span v-if="props.model.featured" class="badge badge-gold" data-testid="featured-badge">{{
+        props.model.featured
+      }}</span>
       <span class="badge" :class="verificationClass" :title="props.model.verification.summary">
         {{
           props.model.verification.status === 'verified'
@@ -100,7 +174,9 @@ function load(tokenizerOnly = false) {
       <span class="badge">{{
         props.model.modelType === 'base' ? 'Base model' : 'Instruction-tuned'
       }}</span>
-      <span v-if="props.cached" class="badge badge-accent">Cached</span>
+      <span v-if="cachedBadge" class="badge badge-accent" data-testid="cached-badge">{{
+        cachedBadge
+      }}</span>
       <span v-if="isActive" class="badge badge-success">Loaded</span>
     </header>
     <p class="small muted">{{ props.model.description }}</p>
@@ -147,21 +223,44 @@ function load(tokenizerOnly = false) {
       </div>
       <div>
         <dt>Memory (estimate)</dt>
-        <dd>
-          ≈ {{ formatBytes(memEstimate) }} on {{ props.backend === 'webgpu' ? 'WebGPU' : 'WASM' }}
-        </dd>
+        <dd>≈ {{ formatBytes(memEstimate) }} on {{ backendName(factsBackend) }}</dd>
       </div>
     </dl>
+    <p
+      v-if="!runsHere"
+      class="alert alert-info small"
+      :data-testid="`backend-note-${props.model.key}`"
+    >
+      {{
+        props.model.backendNotes?.[props.backend] ??
+        `${props.model.name} does not run on ${backendName(props.backend)}.`
+      }}
+      <button
+        v-if="canSwitchToGpu"
+        type="button"
+        class="btn btn-sm"
+        data-testid="switch-to-webgpu"
+        @click="switchToGpu"
+      >
+        Switch to WebGPU
+      </button>
+    </p>
     <div class="row small">
       <label>
         Quantization
         <select
           v-model="dtype"
           :aria-label="`Quantization for ${props.model.name}`"
-          @change="userChoseDtype = true"
+          :data-testid="`dtype-${props.model.key}`"
+          @change="onDtypeChange"
         >
-          <option v-for="v in props.model.variants" :key="v.dtype" :value="v.dtype">
-            {{ v.dtype }} — {{ formatBytes(v.sizeBytes) }} ({{ v.backends.join(', ') }})
+          <option
+            v-for="v in props.model.variants"
+            :key="v.dtype"
+            :value="v.dtype"
+            :disabled="runsHere && !v.backends.includes(props.backend)"
+          >
+            {{ optionLabel(v) }}
           </option>
         </select>
       </label>
@@ -175,12 +274,28 @@ function load(tokenizerOnly = false) {
       <strong>Fidelity:</strong> {{ variant.fidelity ?? 'not measured' }}
       <template v-if="variant.note"> {{ variant.note }}</template>
     </p>
-    <p v-if="!supported" class="alert alert-warning small">
-      {{ dtype }} is not recommended on {{ props.backend }}; choose another quantization or backend.
+    <details
+      v-if="excludedHere.length"
+      class="small excluded"
+      :data-testid="`excluded-${props.model.key}`"
+    >
+      <summary>
+        Not offered on {{ backendName(props.backend) }}:
+        {{ excludedHere.map((e) => e.dtype).join(', ') }} — why?
+      </summary>
+      <ul>
+        <li v-for="e in excludedHere" :key="e.dtype">
+          <strong>{{ e.dtype }}:</strong> {{ e.reason }}
+        </li>
+      </ul>
+    </details>
+    <p v-if="runsHere && !supported" class="alert alert-warning small">
+      {{ dtype }} is not offered on {{ backendName(props.backend) }}; choose another quantization or
+      backend.
     </p>
     <p v-if="f16Problem" class="alert alert-warning small">
       This GPU adapter does not support <code>shader-f16</code>, which {{ dtype }} requires. Choose
-      q8 or fp32, or use WASM.
+      a variant without “16”, or use WASM.
     </p>
     <div v-if="confirming" class="alert alert-warning small" role="alert">
       <p v-for="w in resourceWarning" :key="w">{{ w }}</p>
@@ -193,11 +308,11 @@ function load(tokenizerOnly = false) {
       <button
         type="button"
         class="btn btn-primary"
-        :disabled="busy"
+        :disabled="busy || !runsHere"
         :data-testid="`load-${props.model.key}`"
         @click="load()"
       >
-        {{ isActive ? 'Reload' : 'Load model' }}
+        {{ loadLabel }}
       </button>
       <button
         type="button"
@@ -260,6 +375,10 @@ function load(tokenizerOnly = false) {
   flex-direction: column;
   gap: 0.45rem;
 }
+.model-card.featured {
+  border-color: color-mix(in srgb, var(--gold) 70%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 45%, transparent);
+}
 .model-card.active {
   border-color: var(--accent);
 }
@@ -278,6 +397,10 @@ function load(tokenizerOnly = false) {
 }
 .links {
   padding-left: 1.1rem;
+}
+.excluded ul {
+  padding-left: 1.1rem;
+  margin: 0.3rem 0 0;
 }
 select {
   max-width: 100%;

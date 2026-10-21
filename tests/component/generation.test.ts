@@ -83,8 +83,9 @@ describe('GenerationControls', () => {
   it('can be stopped by the user', async () => {
     const { wb, engine } = await makeWorkbench({ text: 'The' })
     engine.forwardDelayMs = 20
+    // A flat (but not constant: constant logits are rejected as degenerate) distribution.
     engine.logitsFn = () => {
-      const l = new Float32Array(19).fill(0)
+      const l = new Float32Array(19).map((_, i) => (i % 3) / 10)
       l[2] = -Infinity
       return l
     }

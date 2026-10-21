@@ -1,11 +1,76 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { useWorkbench } from '@/composables/useWorkbench'
+import {
+  SHORTCUT_ACTIONS,
+  keyLabel,
+  useShortcuts,
+  type ShortcutAction,
+} from '@/composables/useShortcuts'
 
 const props = defineProps<{ open: boolean; persistSession: boolean }>()
-const emit = defineEmits<{ close: []; 'update:persistSession': [boolean]; clearSaved: [] }>()
+const emit = defineEmits<{
+  close: []
+  'update:persistSession': [boolean]
+  clearSaved: []
+  shortcuts: []
+}>()
 const wb = useWorkbench()
 const dialog = ref<HTMLDialogElement | null>(null)
+
+// ------------------------------------------------------ shortcut remapping
+const shortcuts = useShortcuts()
+const waitingFor = ref<ShortcutAction | null>(null)
+const keyError = ref('')
+const keyStatus = ref('')
+function startCapture(action: ShortcutAction) {
+  waitingFor.value = action
+  shortcuts.capturing.value = true
+  keyError.value = ''
+  keyStatus.value = 'Press the new key (Esc cancels).'
+}
+function stopCapture() {
+  waitingFor.value = null
+  shortcuts.capturing.value = false
+}
+function onCaptureKey(e: KeyboardEvent, action: ShortcutAction) {
+  if (waitingFor.value !== action) return
+  if (e.key === 'Tab') {
+    stopCapture()
+    keyStatus.value = ''
+    return
+  }
+  e.preventDefault()
+  // Keep Escape from closing the dialog while a key is being captured.
+  e.stopPropagation()
+  if (e.key === 'Escape') {
+    stopCapture()
+    keyStatus.value = 'Unchanged.'
+    return
+  }
+  if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph'].includes(e.key)) return
+  if (e.ctrlKey || e.metaKey || e.altKey) {
+    keyError.value = 'Use a single key without Ctrl, Alt or ⌘.'
+    return
+  }
+  const err = shortcuts.setBinding(action, e.key)
+  if (err) {
+    keyError.value = err
+    return
+  }
+  stopCapture()
+  keyError.value = ''
+  keyStatus.value = `${SHORTCUT_ACTIONS.find((a) => a.id === action)!.label}: ${keyLabel(e.key)}.`
+}
+function onCaptureBlur(action: ShortcutAction) {
+  if (waitingFor.value === action) stopCapture()
+}
+function resetKeys() {
+  shortcuts.resetBindings()
+  stopCapture()
+  keyError.value = ''
+  keyStatus.value = 'Shortcuts reset to S and G.'
+}
 watch(
   () => props.open,
   async (o) => {
@@ -15,6 +80,7 @@ watch(
       if (typeof dialog.value.showModal === 'function') dialog.value.showModal()
       else dialog.value.setAttribute('open', '')
     }
+    if (!o) stopCapture()
     if (!o && dialog.value.open) {
       if (typeof dialog.value.close === 'function') dialog.value.close()
       else dialog.value.removeAttribute('open')
@@ -81,6 +147,49 @@ watch(
       <p class="small muted">
         Saved data never includes model weights and never leaves this browser.
       </p>
+      <fieldset class="keys" data-testid="shortcut-settings">
+        <legend>Keyboard shortcuts</legend>
+        <p class="small muted">
+          Single keys, inactive while typing in a text field. Hold a key to repeat.
+        </p>
+        <div v-for="a in SHORTCUT_ACTIONS" :key="a.id" class="row small">
+          <span :id="`key-label-${a.id}`" class="key-label">{{ a.label }}</span>
+          <kbd :data-testid="`shortcut-key-${a.id}`">{{
+            keyLabel(shortcuts.bindings.value[a.id])
+          }}</kbd>
+          <button
+            type="button"
+            class="btn btn-sm"
+            :aria-describedby="`key-label-${a.id}`"
+            :aria-pressed="waitingFor === a.id"
+            :data-testid="`remap-${a.id}`"
+            @click="startCapture(a.id)"
+            @keydown="onCaptureKey($event, a.id)"
+            @blur="onCaptureBlur(a.id)"
+          >
+            {{ waitingFor === a.id ? 'Press a key…' : 'Change' }}
+          </button>
+        </div>
+        <p
+          v-if="keyError"
+          class="alert alert-error small"
+          role="alert"
+          data-testid="shortcut-error"
+        >
+          {{ keyError }}
+        </p>
+        <p v-else class="small faint" aria-live="polite" data-testid="shortcut-status">
+          {{ keyStatus }}
+        </p>
+        <div class="row">
+          <button type="button" class="btn btn-sm" data-testid="reset-shortcuts" @click="resetKeys">
+            Reset to defaults
+          </button>
+          <button type="button" class="btn btn-sm" @click="emit('shortcuts')">
+            Show all shortcuts (?)
+          </button>
+        </div>
+      </fieldset>
     </div>
   </dialog>
 </template>
@@ -104,5 +213,17 @@ watch(
 }
 .num {
   width: 5.5rem;
+}
+.keys {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
+}
+.keys legend {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+.key-label {
+  min-width: 17rem;
 }
 </style>

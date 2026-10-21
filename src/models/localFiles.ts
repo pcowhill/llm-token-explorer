@@ -171,6 +171,7 @@ export const KNOWN_CAUSAL_LM_TYPES = new Set([
   'qwen2',
   'qwen3',
   'qwen3_moe',
+  'qwen3_5_text',
   'phi',
   'phi3',
   'gemma',

@@ -10,43 +10,12 @@
  * `node scripts/fetch-test-models.mjs --smollm2`, cached in CI) they are served from disk
  * to avoid re-downloading 140 MB per run; otherwise the real network is used.
  */
-import { expect, test, type BrowserContext } from '@playwright/test'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-import { HF_CACHE_DIR, state, waitForDistribution } from './helpers'
+import { expect, test } from '@playwright/test'
+import { serveHfFromDisk, state, waitForDistribution } from './helpers'
 
 const REPO = 'onnx-community/SmolLM2-135M-Instruct-ONNX'
 const REV = 'b8a5c0f183b78c55955a5364f610c36668b5e681'
 const VOCAB = 49152
-
-async function serveHfFromDisk(context: BrowserContext) {
-  let served = 0
-  await context.route('https://huggingface.co/**', async (route) => {
-    const url = new URL(route.request().url())
-    const m = /^\/(.+?)\/resolve\/([^/]+)\/(.+)$/.exec(url.pathname)
-    const file = m ? join(HF_CACHE_DIR, m[1]!, decodeURIComponent(m[2]!), m[3]!) : null
-    if (
-      !process.env.NO_HF_DISK &&
-      file &&
-      existsSync(file) &&
-      route.request().method() === 'GET' &&
-      !route.request().headers()['range']
-    ) {
-      served++
-      // Redirect to the local static server (route.fulfill cannot stream 100+ MB bodies).
-      await route.fulfill({
-        status: 302,
-        headers: {
-          location: `http://localhost:4174/${m![1]}/${m![2]}/${m![3]}`,
-          'access-control-allow-origin': '*',
-        },
-      })
-    } else {
-      await route.continue()
-    }
-  })
-  return () => served
-}
 
 async function runSmokeTest(page: import('@playwright/test').Page, backend: 'wasm' | 'webgpu') {
   await page.getByTestId('backend-select').selectOption(backend)
@@ -193,4 +162,95 @@ test('a cached model loads and runs fully offline (service worker + Cache Storag
   expect(Math.abs(s.probSum - 1)).toBeLessThan(1e-6)
   expect(hfRequests).toEqual([])
   await context.setOffline(false)
+})
+
+// --------------------------------------------------------------------- Qwen3.5 (featured)
+const QWEN35 = {
+  repo: 'onnx-community/Qwen3.5-0.8B-Text-ONNX',
+  rev: '25cdf33f386b487a25f3d743e86442517bdb77ff',
+  logits: 248320,
+  tokenizer: 248077,
+  // Default example: chat template, thinking off — "Pick a random number between 1 and 10. Reply with just the number."
+  chatIds: [
+    248045, 846, 198, 35728, 264, 4055, 1324, 1881, 220, 16, 321, 220, 16, 15, 13, 17308, 440, 1066,
+    279, 1324, 13, 248046, 198, 248045, 74455, 198, 248068, 271, 248069, 271,
+  ],
+}
+
+async function decodedTop(page: import('@playwright/test').Page, ids: number[]) {
+  return page.evaluate((ids) => {
+    const w = (window as unknown as { __lte: { tokenizer: { value: { decoded: string[] } } } })
+      .__lte
+    return ids.map((i) => w.tokenizer.value.decoded[i])
+  }, ids)
+}
+
+test('real Qwen3.5-0.8B inference: default variant (fp32) on WebGPU, starter examples', async ({
+  page,
+  context,
+}, testInfo) => {
+  test.setTimeout(1_800_000)
+  const served = await serveHfFromDisk(context)
+  await page.goto('./?debug=1')
+  await expect(page.getByTestId('capabilities')).not.toContainText('Detecting', { timeout: 30_000 })
+  const caps = await page.getByTestId('capabilities').textContent()
+  test.skip(!/WebGPU:\s*available/.test(caps ?? ''), `No WebGPU adapter: ${caps}`)
+  await page.getByTestId('backend-select').selectOption('webgpu')
+  // The default is the most faithful variant that runs on WebGPU: fp32.
+  await expect(page.getByTestId('dtype-qwen3.5-0.8b')).toHaveValue('fp32')
+  await page.getByTestId('load-qwen3.5-0.8b').click()
+  await page.getByRole('button', { name: 'Load anyway' }).click() // large-download confirmation
+  await expect(page.getByTestId('model-status')).toHaveText(/Ready|Load failed/, {
+    timeout: 1_200_000,
+  })
+  const err = page.getByTestId('model-error')
+  if (await err.isVisible()) throw new Error(`Model load failed: ${await err.textContent()}`)
+  const info = (await state(page)).info!
+  expect(info.identity).toContain(`${QWEN35.repo}@${QWEN35.rev}#fp32`)
+  expect(info.backend).toBe('webgpu')
+  expect(info.logitsSize).toBe(QWEN35.logits)
+  expect(info.tokenizerSize).toBe(QWEN35.tokenizer)
+  const stop = await page.evaluate(
+    () =>
+      (window as unknown as { __lte: { stopTokenIds: { value: number[] } } }).__lte.stopTokenIds
+        .value,
+  )
+  expect(stop).toEqual(expect.arrayContaining([248044, 248046])) // <|endoftext|>, <|im_end|>
+
+  // Default starter example: chat template with thinking off
+  await expect.poll(async () => (await state(page)).tokens).toEqual(QWEN35.chatIds)
+  await expect(page.getByTestId('loaded-example')).toContainText('thinking off')
+  await waitForDistribution(page, 600_000)
+  const s1 = await state(page)
+  expect(s1.outputDims).toEqual([1, QWEN35.chatIds.length, QWEN35.logits])
+  expect(s1.outputDtype).toBe('float32')
+  expect(s1.logitsFinite).toBe(true)
+  expect(Math.abs(s1.probSum - 1)).toBeLessThan(1e-6)
+  const top1 = await decodedTop(page, s1.top)
+  // fp32 reference (Node.js): "6" 30.1 %, "7" 21.8 %, "5" 18.0 %, "4" 12.6 %
+  expect(top1[0]).toBe('6')
+  expect(s1.original[0]!).toBeGreaterThan(0.27)
+  expect(s1.original[0]!).toBeLessThan(0.33)
+  expect(top1.slice(0, 4).sort()).toEqual(['4', '5', '6', '7'])
+
+  // Append the answer greedily and run another pass
+  await page.getByTestId('greedy-one').click()
+  await expect.poll(async () => (await state(page)).tokens.length).toBe(QWEN35.chatIds.length + 1)
+  await waitForDistribution(page, 600_000)
+  const s2 = await state(page)
+  expect(s2.logitsFinite).toBe(true)
+  expect(Math.abs(s2.probSum - 1)).toBeLessThan(1e-6)
+
+  // Thinking on: the context ends with an open <think> block and the model starts reasoning
+  await page.getByTestId('example-select').selectOption('thinking')
+  await expect.poll(async () => (await state(page)).tokens.slice(-2)).toEqual([248068, 198])
+  await waitForDistribution(page, 600_000)
+  const s3 = await state(page)
+  const top3 = await decodedTop(page, s3.top)
+  expect(top3[0]).toBe('Thinking')
+  expect(s3.original[0]!).toBeGreaterThan(0.85)
+  testInfo.annotations.push({
+    type: 'real-inference',
+    description: `qwen3.5 fp32 webgpu (${caps?.trim()}): chat top ${JSON.stringify(top1.slice(0, 4))} p=${s1.original.slice(0, 4).map((p) => p.toFixed(4))}; thinking top ${JSON.stringify(top3[0])} p=${s3.original[0]!.toFixed(4)}; files from disk: ${served()}`,
+  })
 })

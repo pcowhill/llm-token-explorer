@@ -11,6 +11,7 @@ import {
   type StorageInfo,
 } from '@/models/cacheStorage'
 import { CATALOG, formatBytes } from '@/models/catalog'
+import { cachedVariants, repoCacheStatus } from '@/models/variants'
 import { useWorkbench } from '@/composables/useWorkbench'
 
 const emit = defineEmits<{ changed: [CachedModel[]] }>()
@@ -57,10 +58,26 @@ async function persist() {
 
 const label = (repo: string) => CATALOG.find((c) => c.repo === repo)?.name ?? repo
 
+/** Cached quantizations of one repo@revision, e.g. "fp16, q8 (partial)". */
+function dtypeSummary(m: CachedModel): string {
+  const cat = CATALOG.find((c) => c.repo === m.repo && c.revision === m.revision)
+  const parts = cat
+    ? (() => {
+        // Catalog models: exact file lists (incl. every external-data chunk).
+        const st = repoCacheStatus([m], m.repo, m.revision, cat.variants)
+        return cat.variants
+          .filter((v) => st.dtypes[v.dtype] !== 'none')
+          .map((v) => `${v.dtype}${st.dtypes[v.dtype] === 'partial' ? ' (partial)' : ''}`)
+      })()
+    : cachedVariants(m).map((v) => `${v.dtype}${v.complete ? '' : ' (partial)'}`)
+  return parts.length ? parts.join(', ') : 'tokenizer/config only'
+}
+
 onMounted(refresh)
 watch(
   () => wb.modelStatus.value,
-  (s) => s === 'ready' && refresh(),
+  // Failed or cancelled loads can leave files in the cache too.
+  (s, prev) => prev === 'loading' && s !== 'loading' && refresh(),
 )
 defineExpose({ refresh })
 </script>
@@ -96,6 +113,7 @@ defineExpose({ refresh })
           <tr>
             <th>Model</th>
             <th>Revision</th>
+            <th>Quantizations</th>
             <th class="num">Files</th>
             <th class="num">Size</th>
             <th><span class="sr-only">Actions</span></th>
@@ -107,6 +125,7 @@ defineExpose({ refresh })
             <td>
               <code>{{ m.revision.slice(0, 7) }}</code>
             </td>
+            <td :data-testid="`cache-dtypes-${m.repo}`">{{ dtypeSummary(m) }}</td>
             <td class="num">{{ m.files.length }}</td>
             <td class="num">{{ formatBytes(m.totalBytes) }}</td>
             <td>

@@ -16,7 +16,13 @@ deployed, the header shows **Update available — reload**.
 - Requests are answered **cache-first**, so a cached model loads without any network
   access. Transformers.js performs a few revision-less (`main`) existence checks; the app
   pins those to the revision being loaded.
-- **Model → Cache** lists cached models with sizes, removes one or all, shows the storage
+- **Cache state per quantization.** A dtype counts as cached only when its graph file, every
+  external-data chunk (`*.onnx_data`, `*.onnx_data_1`, …) and the tokenizer/config files are
+  cached (`src/models/variants.ts`). The quantization dropdowns mark each option
+  “✓ cached” or “↓ <size still to download>” (“partly cached” when some files are there), the
+  Load button reads **Load model (cached)** or **Download & load (X MB)**, and the card badge
+  names the cached dtypes (“Cached: fp16, q8”).
+- **Model → Cache** lists cached models with their quantizations and sizes, removes one or all, shows the storage
   estimate (`navigator.storage.estimate()`) and can request persistent storage
   (`navigator.storage.persist()`), which reduces the chance of eviction.
 - If a file cannot be written (e.g. `QuotaExceededError`), the app warns that the model will
@@ -43,6 +49,9 @@ deployed, the header shows **Update available — reload**.
 
 - The app's own static files from GitHub Pages.
 - `https://huggingface.co/<repo>/resolve/<sha>/…` (and Hugging Face's CDN redirects) — only
-  when you load a model, its tokenizer, or check cache state for it.
+  when you load a model or its tokenizer.
+- `https://huggingface.co/api/models/<repo>/revision/<rev>?blobs=true` — only while you type
+  a repository in **Model → Hugging Face repo**, to list its files and sizes. Offline, the
+  tab falls back to the quantizations already in the cache.
 
 There is no analytics, telemetry or tracking, and prompts never leave the browser.

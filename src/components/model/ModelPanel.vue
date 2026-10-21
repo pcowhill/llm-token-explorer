@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
 import { useWorkbench } from '@/composables/useWorkbench'
-import { CATALOG, formatBytes } from '@/models/catalog'
+import { catalogInDisplayOrder, formatBytes } from '@/models/catalog'
 import { resolveBackend } from '@/stores/workbench'
 import type { CachedModel } from '@/models/cacheStorage'
-import type { ModelDtype } from '@/types'
 import ModelCard from './ModelCard.vue'
 import LoadProgress from './LoadProgress.vue'
 import LocalModelLoader from './LocalModelLoader.vue'
+import HubRepoLoader from './HubRepoLoader.vue'
 import CacheManager from './CacheManager.vue'
 import InfoTip from '@/components/common/InfoTip.vue'
 import { formatMs, shortSha } from '@/utils/format'
@@ -26,27 +26,6 @@ watch(
 const cached = shallowRef<CachedModel[]>([])
 const backend = computed(() => resolveBackend(wb.backendPref.value, wb.capabilities.value))
 const caps = computed(() => wb.capabilities.value)
-
-const hubRepo = ref('')
-const hubRevision = ref('main')
-const hubDtype = ref<ModelDtype>('q8')
-function loadHub() {
-  const repo = hubRepo.value.trim()
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-    wb.notify('error', 'Enter a repository id like "owner/name".')
-    return
-  }
-  void wb.loadModel(
-    { kind: 'hub', repo, revision: hubRevision.value.trim() || 'main', displayName: repo },
-    backend.value,
-    hubDtype.value,
-  )
-}
-const isCached = (repo: string, revision: string) =>
-  cached.value.some(
-    (c) =>
-      c.repo === repo && c.revision === revision && c.files.some((f) => f.path.endsWith('.onnx')),
-  )
 </script>
 
 <template>
@@ -180,11 +159,11 @@ const isCached = (repo: string, revision: string) =>
         class="cards"
       >
         <ModelCard
-          v-for="m in CATALOG"
+          v-for="m in catalogInDisplayOrder()"
           :key="m.key"
           :model="m"
           :backend="backend"
-          :cached="isCached(m.repo, m.revision)"
+          :cached="cached"
         />
       </div>
       <div
@@ -202,39 +181,7 @@ const isCached = (repo: string, revision: string) =>
         aria-labelledby="model-tab-hub"
         class="stack"
       >
-        <h3>Load any Hugging Face ONNX repository</h3>
-        <p class="small alert alert-warning">
-          Experimental and unverified: the repository must contain a Transformers.js-compatible
-          decoder-only ONNX export (e.g. from <code>onnx-community</code>). Downloads go directly
-          from huggingface.co to your browser.
-        </p>
-        <div class="row small">
-          <label
-            >Repository
-            <input v-model="hubRepo" type="text" placeholder="owner/name" data-testid="hub-repo"
-          /></label>
-          <label>Revision <input v-model="hubRevision" type="text" size="10" /></label>
-          <label>
-            dtype
-            <select v-model="hubDtype">
-              <option
-                v-for="d in ['q8', 'q4', 'q4f16', 'fp16', 'fp32', 'int8', 'uint8', 'bnb4']"
-                :key="d"
-                :value="d"
-              >
-                {{ d }}
-              </option>
-            </select>
-          </label>
-          <button
-            type="button"
-            class="btn btn-primary"
-            :disabled="wb.modelStatus.value === 'loading'"
-            @click="loadHub"
-          >
-            Load
-          </button>
-        </div>
+        <HubRepoLoader :backend="backend" :cached="cached" />
       </div>
       <div
         v-show="tab === 'cache'"

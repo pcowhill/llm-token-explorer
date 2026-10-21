@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import ModelPanel from '@/components/model/ModelPanel.vue'
 import LocalModelLoader from '@/components/model/LocalModelLoader.vue'
 import AppHeader from '@/components/AppHeader.vue'
-import { CATALOG } from '@/models/catalog'
+import { CATALOG, catalogModel } from '@/models/catalog'
 import { EngineError } from '@/inference/engine'
 import { makeWorkbench, mountWith, settle } from './helpers'
 import { FakeEngine } from './fakeEngine'
@@ -27,11 +27,8 @@ describe('ModelPanel', () => {
     await w.get('[data-testid="load-smollm2-135m-instruct"]').trigger('click')
     await settle()
     const req = engine.loadCalls[0]!
-    expect(req.source).toMatchObject({
-      kind: 'hub',
-      repo: CATALOG[0]!.repo,
-      revision: CATALOG[0]!.revision,
-    })
+    const smol = catalogModel('smollm2-135m-instruct')!
+    expect(req.source).toMatchObject({ kind: 'hub', repo: smol.repo, revision: smol.revision })
     expect(req.dtype).toBe('fp16')
     expect(req.device).toBe('wasm')
     expect(w.get('[data-testid="loaded-model"]').text()).toContain('SmolLM2')

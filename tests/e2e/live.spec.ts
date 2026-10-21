@@ -45,9 +45,21 @@ test('deployed site loads with correct subpath assets and no runtime errors', as
   // Service worker + manifest
   const scope = await page.evaluate(async () => (await navigator.serviceWorker.ready).scope)
   expect(scope).toMatch(/\/llm-token-explorer\/$/)
+  // Featured model listed first; f16 note; Hub guidance; shortcut cheat-sheet
+  await expect(page.locator('[data-testid^="model-card-"]').first()).toHaveAttribute(
+    'data-testid',
+    'model-card-qwen3.5-0.8b',
+  )
+  await expect(page.getByTestId('featured-badge')).toHaveText('★ Patrick’s Choice')
+  await page.getByRole('tab', { name: 'Hugging Face repo' }).click()
+  await expect(page.getByTestId('hub-guide')).toContainText('onnx-community')
+  await page.getByRole('tab', { name: 'Recommended' }).click()
   // Basic interactions
   await page.getByRole('button', { name: 'Learn / Help' }).click()
   await expect(page.getByTestId('learn-panel')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('?')
+  await expect(page.getByTestId('shortcuts-dialog')).toBeVisible()
   await page.keyboard.press('Escape')
   expect(failed).toEqual([])
   expect(errors).toEqual([])
@@ -65,7 +77,10 @@ test('deployed site performs real SmolLM2 inference (WASM, fp16)', async ({ page
   expect(s.logitsFinite).toBe(true)
   expect(Math.abs(s.probSum - 1)).toBeLessThan(1e-6)
   expect(s.top[0]).toBe(7042) // " Paris"
-  await page.getByTestId('sample-one').click()
+  await expect(page.getByTestId('loaded-example')).toContainText('Text completion')
+  // Sampling shortcut (S), outside text fields
+  await page.locator('body').click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press('s')
   await expect.poll(async () => (await state(page)).tokens.length).toBe(6)
   await waitForDistribution(page, 300_000)
   expect(Math.abs((await state(page)).probSum - 1)).toBeLessThan(1e-6)

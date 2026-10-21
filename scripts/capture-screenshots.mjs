@@ -6,15 +6,18 @@
  * scripts/serve-test-models.mjs on :4174 when available).
  */
 import { chromium } from '@playwright/test'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const BASE = process.env.APP_URL ?? 'http://localhost:4173/llm-token-explorer/'
 const OUT = 'docs/screenshots'
 const HF = join('tests', 'fixtures', 'models', 'hf')
 
-const browser = await chromium.launch()
-const context = await browser.newContext({
+// A persistent (non-incognito) profile, so downloaded models really land in Cache Storage
+// and the per-quantization cache marks appear.
+const profile = mkdtempSync(join(tmpdir(), 'lte-shots-'))
+const context = await chromium.launchPersistentContext(profile, {
   viewport: { width: 1600, height: 1000 },
   deviceScaleFactor: 1,
 })
@@ -78,4 +81,26 @@ console.log('saved 00-overview')
 await page.getByLabel('Color theme').selectOption('dark')
 await page.screenshot({ path: `${OUT}/08-dark-theme.png` })
 console.log('saved 08-dark-theme')
-await browser.close()
+await page.getByLabel('Color theme').selectOption('light')
+
+// Per-quantization cache state: the loaded SmolLM2 card and the Cache tab
+await page.getByTestId('toggle-model-sources').click()
+await page.getByTestId('cached-badge').first().waitFor()
+await shot('09-cache-per-quantization', page.getByTestId('model-card-smollm2-135m-instruct'))
+await page.getByRole('tab', { name: 'Cache' }).click()
+await page.getByTestId('cache-table').waitFor()
+await shot('10-cache-tab', page.locator('#model-tabpanel-cache'))
+
+// Hugging Face repo tab: guidance and dtypes detected from the Hub API (real network)
+await page.getByRole('tab', { name: 'Hugging Face repo' }).click()
+await page.getByTestId('hub-repo').fill('onnx-community/Qwen3.5-0.8B-Text-ONNX')
+await page.getByTestId('hub-status').filter({ hasText: 'quantizations found' }).waitFor()
+await shot('11-hugging-face-repo', page.getByTestId('hub-loader'))
+
+// Keyboard shortcut cheat-sheet (press "?")
+await page.locator('body').click({ position: { x: 5, y: 5 } })
+await page.keyboard.press('?')
+await page.getByTestId('shortcuts-dialog').waitFor()
+await shot('12-keyboard-shortcuts', page.getByTestId('shortcuts-dialog'))
+await context.close()
+rmSync(profile, { recursive: true, force: true })

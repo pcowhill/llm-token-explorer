@@ -32,8 +32,8 @@ export interface ModelVariant {
   /** Size of the ONNX weight file(s) in bytes (from the Hugging Face API). */
   sizeBytes: number
   backends: Backend[]
-  /** Which backend this variant is the default for. */
-  defaultFor?: Backend
+  /** Backends this variant is the default for. */
+  defaultFor?: Backend[]
   /**
    * Measured fidelity vs. the full-precision model: mean KL divergence (nats) of the
    * next-token distribution over 5 reference prompts, plus top-1 agreement. See
@@ -41,6 +41,16 @@ export interface ModelVariant {
    */
   fidelity?: string
   note?: string
+  /** Working-memory estimate for this variant (overrides the model-level estimate). */
+  memoryEstimateBytes?: number
+}
+
+/** A variant that exists in the repository but is deliberately not offered on some backends. */
+export interface ExcludedVariant {
+  dtype: ModelDtype
+  backends: Backend[]
+  /** Why, in one or two sentences (shown on the model card). */
+  reason: string
 }
 
 export interface VerificationRecord {
@@ -68,6 +78,8 @@ export interface PromptExample {
   text?: string
   messages?: { role: string; content: string }[]
   addGenerationPrompt?: boolean
+  /** Extra chat-template variables, e.g. `{ enable_thinking: true }`. */
+  templateOptions?: Record<string, string | number | boolean>
   parts?: PromptPart[]
 }
 
@@ -101,6 +113,14 @@ export interface CatalogModel {
   limitations: string[]
   promptFormat: string
   examples: PromptExample[]
+  /** Example loaded automatically after the model loads (defaults to none). */
+  defaultExampleId?: string
+  /** Highlight badge shown on the card (e.g. "★ Patrick's Choice"); featured models are listed first. */
+  featured?: string
+  /** Variants present in the repo but not offered on some backends, and why. */
+  excludedVariants?: ExcludedVariant[]
+  /** Explanation shown when the model cannot run at all on a backend. */
+  backendNotes?: Partial<Record<Backend, string>>
 }
 
 /** How a special token is used, derived from tokenizer metadata. */

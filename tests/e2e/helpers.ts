@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type BrowserContext, type Page } from '@playwright/test'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -96,4 +96,39 @@ export async function setNumber(page: Page, testId: string, value: string) {
   const input = page.getByTestId(testId)
   await input.fill(value)
   await input.press('Tab')
+}
+
+/**
+ * Serve pinned https://huggingface.co/<repo>/resolve/<rev>/<path> requests from
+ * tests/fixtures/models/hf/ when the file is there (see scripts/fetch-test-models.mjs), by
+ * redirecting to scripts/serve-test-models.mjs on :4174 (route.fulfill cannot stream
+ * 100 MB+ bodies). Everything else goes to the real network. Returns a served-file counter.
+ */
+export async function serveHfFromDisk(context: BrowserContext) {
+  let served = 0
+  await context.route('https://huggingface.co/**', async (route) => {
+    const url = new URL(route.request().url())
+    const m = /^\/(.+?)\/resolve\/([^/]+)\/(.+)$/.exec(url.pathname)
+    const file = m ? join(HF_CACHE_DIR, m[1]!, decodeURIComponent(m[2]!), m[3]!) : null
+    if (
+      !process.env.NO_HF_DISK &&
+      file &&
+      existsSync(file) &&
+      route.request().method() === 'GET' &&
+      !route.request().headers()['range']
+    ) {
+      served++
+      // Redirect to the local static server (route.fulfill cannot stream 100+ MB bodies).
+      await route.fulfill({
+        status: 302,
+        headers: {
+          location: `http://localhost:4174/${m![1]}/${m![2]}/${m![3]}`,
+          'access-control-allow-origin': '*',
+        },
+      })
+    } else {
+      await route.continue()
+    }
+  })
+  return () => served
 }

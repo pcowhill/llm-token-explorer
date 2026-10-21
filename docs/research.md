@@ -14,8 +14,15 @@ Findings that shaped the design. Versions: `@huggingface/transformers` 4.3.1,
 3. **WebGPU.** Works through ONNX Runtime's WebGPU EP. f16 variants require the
    `shader-f16` feature (the SwiftShader adapter in headless Chromium lacks it: “Program
    Expand requires f16”). q8/fp32 run on any adapter.
-4. **WASM/CPU.** All tested variants except Qwen fp16 (1 GB → `std::bad_alloc`) run.
-   fp16 weights run on WASM at q8 speed for SmolLM2.
+4. **WASM/CPU.** All tested variants except Qwen2.5 fp16/fp32 (`std::bad_alloc`) run.
+   fp16 weights run on WASM at q8 speed for SmolLM2. Nothing of Qwen3.5 runs on WASM: fp32
+   (3.1 GB) and fp16 exceed the heap, and its quantized exports use
+   `com.microsoft.GatherBlockQuantized`, which the ORT Web WASM build lacks.
+   **fp16 on WebGPU can overflow.** ORT's `SimplifiedLayerNormFusion` runs only for the CPU
+   and CUDA EPs, so exports that compute RMSNorm with fp16 `Pow/ReduceMean` (SmolLM2,
+   Qwen2.5) execute literally in fp16 on WebGPU; with their large activations x² overflows
+   and the logits become all zero. See
+   [model-compatibility.md](model-compatibility.md#fp16-overflow-on-webgpu).
 5. **Quantized variants.** Names → files: fp32 `model.onnx`, fp16 `_fp16`, q8
    `_quantized`, int8, uint8, q4, q4f16, bnb4. q8 (dynamic quantization) distorts small
    models' distributions noticeably; see the fidelity table in

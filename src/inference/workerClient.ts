@@ -7,6 +7,7 @@ import type { Capabilities, ProgressEvent } from '@/types'
 import {
   EngineError,
   type ChatMessage,
+  type ChatTemplateOptions,
   type ForwardOptions,
   type ForwardOutput,
   type InferenceEngine,
@@ -103,8 +104,9 @@ export class WorkerEngineClient implements InferenceEngine {
   applyChatTemplate(
     messages: ChatMessage[],
     addGenerationPrompt: boolean,
+    templateOptions?: ChatTemplateOptions,
   ): Promise<{ ids: number[]; text: string }> {
-    return this.call({ type: 'chatTemplate', messages, addGenerationPrompt })
+    return this.call({ type: 'chatTemplate', messages, addGenerationPrompt, templateOptions })
   }
 
   forward(ids: number[], options: ForwardOptions): Promise<ForwardOutput> {

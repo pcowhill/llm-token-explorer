@@ -13,7 +13,8 @@ real neural-network inference in the browser with
 │   pure modules: sampling/ (softmax, pipeline, PRNG)                      │
 │                 tokenization/ (sequence ops, display, vocabulary query)  │
 │                 history/ (branching tree, experiment JSON)               │
-│                 models/ (catalog, local-file validation, cache mgmt)     │
+│                 models/ (catalog, variants & cache state, Hub API,       │
+│                          local-file validation, cache mgmt)              │
 │                                   │ InferenceEngine interface            │
 │                    WorkerEngineClient (postMessage RPC)                  │
 └───────────────────────────────────┼──────────────────────────────────────┘
@@ -21,7 +22,7 @@ real neural-network inference in the browser with
 ┌──────────────────────────── Inference Web Worker ───────────────────────┐
 │ TransformersEngine (src/inference/transformersEngine.ts)                 │
 │   AutoTokenizer + AutoModelForCausalLM → model({input_ids, attention_mask})│
-│   → logits tensor [1, seq, vocab] → last row copied to a Float32Array    │
+│   → logits tensor [1, seq, vocab] → last row as Float32Array (fp16 too)  │
 │   fetch shim: local files, cache-first Hub access, revision pinning     │
 │   ONNX Runtime Web (self-hosted WASM under <base>/ort/) / WebGPU         │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -29,18 +30,20 @@ real neural-network inference in the browser with
 
 ## Separation of concerns
 
-| Concern                   | Module                                                                            | Notes                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| UI                        | `src/components/**`                                                               | No component imports Transformers.js.                                                                    |
-| State & orchestration     | `src/stores/workbench.ts`                                                         | Single source of truth; stale-result protection; debounced inference.                                    |
-| Inference runtime adapter | `src/inference/transformersEngine.ts`                                             | The **only** module importing `@huggingface/transformers`.                                               |
-| Worker transport          | `src/workers/inference.worker.ts`, `src/inference/workerClient.ts`, `protocol.ts` | Requests are serialized (ORT Web cannot run sessions concurrently); logits are transferred, not copied.  |
-| Engine interface          | `src/inference/engine.ts`                                                         | `InferenceEngine` — implemented by the worker client in the app and by a fake engine in component tests. |
-| Logits → probabilities    | `src/sampling/softmax.ts`                                                         | Float64, max-subtraction, NaN/±∞ handling.                                                               |
-| Sampling                  | `src/sampling/pipeline.ts`, `prng.ts`                                             | Temperature → top-k → top-p → min-p; SFC32 PRNG.                                                         |
-| Tokens                    | `src/tokenization/*`                                                              | Exact-ID sequence ops, invisible-character display, byte decoding, vocabulary search/sort/pagination.    |
-| History                   | `src/history/tree.ts`, `experiment.ts`                                            | Branching tree of exact token sequences; validated JSON import/export.                                   |
-| Models                    | `src/models/catalog.ts`, `localFiles.ts`, `cacheStorage.ts`                       | Pinned catalog; local layout detection; Cache Storage management.                                        |
+| Concern                   | Module                                                                                  | Notes                                                                                                                            |
+| ------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| UI                        | `src/components/**`                                                                     | No component imports Transformers.js.                                                                                            |
+| State & orchestration     | `src/stores/workbench.ts`                                                               | Single source of truth; stale-result protection; debounced inference.                                                            |
+| Inference runtime adapter | `src/inference/transformersEngine.ts`                                                   | The **only** module importing `@huggingface/transformers`.                                                                       |
+| Worker transport          | `src/workers/inference.worker.ts`, `src/inference/workerClient.ts`, `protocol.ts`       | Requests are serialized (ORT Web cannot run sessions concurrently); logits are transferred, not copied.                          |
+| Engine interface          | `src/inference/engine.ts`                                                               | `InferenceEngine` — implemented by the worker client in the app and by a fake engine in component tests.                         |
+| Logits → probabilities    | `src/sampling/softmax.ts`, `logitsHealth.ts`                                            | Float64, max-subtraction, NaN/±∞ handling; NaN/constant (e.g. all-zero) logits are rejected as errors.                           |
+| fp16 logits               | `src/inference/logitsRow.ts`                                                            | Last row of `[1, seq, V]` → Float32Array, from Float16Array or raw Uint16 half bits.                                             |
+| Sampling                  | `src/sampling/pipeline.ts`, `prng.ts`                                                   | Temperature → top-k → top-p → min-p; SFC32 PRNG.                                                                                 |
+| Tokens                    | `src/tokenization/*`                                                                    | Exact-ID sequence ops, invisible-character display, byte decoding, vocabulary search/sort/pagination.                            |
+| History                   | `src/history/tree.ts`, `experiment.ts`                                                  | Branching tree of exact token sequences; validated JSON import/export.                                                           |
+| Models                    | `src/models/catalog.ts`, `variants.ts`, `hubApi.ts`, `localFiles.ts`, `cacheStorage.ts` | Pinned catalog; dtype ↔ files and per-dtype cache state; Hub API file listing; local layout detection; Cache Storage management. |
+| Keyboard shortcuts        | `src/composables/useShortcuts.ts`, `App.vue`                                            | Remappable single keys (persisted), global handler inactive in text fields and dialogs; rate-limited repeat.                     |
 
 ## Why a raw forward pass instead of `generate()`
 
@@ -53,7 +56,18 @@ out.logits.dims // [1, sequenceLength, vocabularySize]  e.g. [1, 5, 49152]
 ```
 
 and copies the last row. This is the complete, unprocessed next-token logits vector; every
-probability shown in the UI is computed from it by this app's own, tested code.
+probability shown in the UI is computed from it by this app's own, tested code. Before a
+result is shown, `checkLogits()` rejects NaN / +∞ / constant vectors (a broken
+variant/backend combination would otherwise look like a uniform distribution).
+
+## Loading a model resets the workspace
+
+Token IDs mean different text in different vocabularies, so every successful load (catalog,
+Hub repo, local; reload included) clears the context, starts a fresh history tree, restarts
+the generator from the seed, resets the Example menu and loads the model's
+`defaultExampleId` example if it has one, with a “Context cleared for new model” note. The
+one exception: right after importing an experiment (or restoring a saved session), loading
+that experiment's own model (same repo and revision, any dtype) keeps the imported history.
 
 ## Data integrity
 
