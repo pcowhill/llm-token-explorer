@@ -116,6 +116,12 @@ const statusClass = computed(
   top: 0;
   z-index: 20;
 }
+@media (max-width: 700px) {
+  .app-header {
+    position: static;
+    gap: 0.5rem;
+  }
+}
 .brand {
   display: flex;
   align-items: center;
