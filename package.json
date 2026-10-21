@@ -1,0 +1,58 @@
+{
+  "name": "llm-token-explorer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive, fully client-side workbench for exploring LLM tokenization, next-token logits, probabilities and sampling.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --build --force && vite build",
+    "build:only": "vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --build --force",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:component": "vitest run --project component",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test --project=mocked",
+    "test:e2e:real": "playwright test --project=real-inference",
+    "test:e2e:live": "playwright test --project=live",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build:only"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.1",
+    "vue": "3.5.44"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.56.1",
+    "@types/node": "22.20.5",
+    "@vitejs/plugin-vue": "6.0.10",
+    "@vue/eslint-config-prettier": "10.2.0",
+    "@vue/eslint-config-typescript": "14.9.0",
+    "@vue/test-utils": "2.5.1",
+    "@vue/tsconfig": "0.9.1",
+    "eslint": "10.13.0",
+    "eslint-plugin-vue": "10.11.1",
+    "fake-indexeddb": "6.2.6",
+    "globals": "17.13.0",
+    "jiti": "^2.7.0",
+    "jsdom": "30.1.3",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.0",
+    "vite": "8.3.4",
+    "vite-plugin-pwa": "2.0.0",
+    "vitest": "5.0.5",
+    "vue-tsc": "3.3.13",
+    "workbox-window": "7.4.1"
+  }
+}
