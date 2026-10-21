@@ -8,7 +8,9 @@ import { CATALOG } from '../../src/models/catalog'
 import { state, waitForDistribution } from './helpers'
 
 for (const model of CATALOG) {
-  test(`verify ${model.key} (WASM, default quantization): full-vocabulary logits`, async ({ page }, testInfo) => {
+  test(`verify ${model.key} (WASM, default quantization): full-vocabulary logits`, async ({
+    page,
+  }, testInfo) => {
     test.skip(
       !process.env.VERIFY_ALL_MODELS,
       'Set VERIFY_ALL_MODELS=1 to download and verify every catalog model',

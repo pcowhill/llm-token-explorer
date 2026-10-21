@@ -56,6 +56,8 @@ export interface LoadResult {
     topP?: number
     repetitionPenalty?: number
   } | null
+  /** Files that could not be written to the browser cache (model will not work offline). */
+  cacheWarnings?: string[]
 }
 
 export interface ForwardOptions {
@@ -148,6 +150,12 @@ export function classifyError(err: unknown): EngineError {
       message,
       'out-of-memory',
       'The model did not fit in memory. Try a smaller model or a more aggressively quantized variant (q4/q4f16).',
+    )
+  if (/offline/.test(m))
+    return new EngineError(
+      message,
+      'network',
+      'Load this model once while online (it is then cached), or load the files from disk via Local files.',
     )
   if (/failed to fetch|networkerror|network error|load failed|err_|aborted|timeout/.test(m))
     return new EngineError(

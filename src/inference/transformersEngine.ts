@@ -18,7 +18,6 @@ import {
   AutoModelForCausalLM,
   AutoTokenizer,
   DynamicCache,
-  ModelRegistry,
   Tensor,
   env,
   type PreTrainedModel,
@@ -35,6 +34,7 @@ import type {
   TokenizerSnapshot,
 } from '@/types'
 import { fnv1a } from '@/tokenization/sequence'
+import { DTYPE_FILE_SUFFIX } from '@/models/catalog'
 import {
   EngineError,
   classifyError,
@@ -76,7 +76,79 @@ async function appFetch(input: string | URL, init?: RequestInit): Promise<Respon
       headers: { 'content-length': String(file.size), 'content-type': 'application/octet-stream' },
     })
   }
+  const hub = HF_RESOLVE_RE.exec(url)
+  if (hub) {
+    const [, repo, requested, file] = hub as unknown as [string, string, string, string]
+    // Some internal existence checks ignore the requested revision and use "main".
+    // Pin them to the revision being loaded so every file comes from the same commit.
+    const revision =
+      pinnedHub && repo === pinnedHub.repo && requested === 'main' ? pinnedHub.revision : requested
+    const pinnedUrl = `https://huggingface.co/${repo}/resolve/${revision}/${file}`
+    // Cache first: lets cached models load offline and skips metadata round-trips.
+    if (typeof caches !== 'undefined') {
+      try {
+        const cached = await (await caches.open(BROWSER_CACHE_KEY)).match(pinnedUrl)
+        if (cached) return cached
+      } catch {
+        /* Cache Storage unavailable: fall through to the network */
+      }
+    }
+    try {
+      return await fetch(pinnedUrl, init)
+    } catch (e) {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false)
+        throw new Error(`You are offline and ${file} of ${repo} is not in the browser cache.`)
+      throw e
+    }
+  }
   return fetch(input, init)
+}
+
+/** True when config.json and the ONNX weights for this dtype are already in Cache Storage. */
+async function weightsCached(
+  repo: string,
+  revision: string,
+  dtype: string,
+): Promise<boolean | null> {
+  if (typeof caches === 'undefined') return null
+  try {
+    const cache = await caches.open(BROWSER_CACHE_KEY)
+    const suffix = DTYPE_FILE_SUFFIX[dtype as keyof typeof DTYPE_FILE_SUFFIX] ?? ''
+    const base = `https://huggingface.co/${repo}/resolve/${revision}/`
+    return (
+      !!(await cache.match(`${base}config.json`)) &&
+      !!(await cache.match(`${base}onnx/model${suffix}.onnx`))
+    )
+  } catch {
+    return null
+  }
+}
+
+const HF_RESOLVE_RE = /^https:\/\/huggingface\.co\/([^/]+\/[^/]+)\/resolve\/([^/]+)\/(.+)$/
+/** Repo + pinned revision of the Hub model currently being loaded. */
+let pinnedHub: { repo: string; revision: string } | null = null
+
+/** Errors from writing downloaded files to Cache Storage during the current load. */
+let cacheWriteErrors: string[] = []
+
+/**
+ * Cache Storage adapter for Transformers.js (`env.customCache`). Same behaviour as the
+ * built-in browser cache, but write failures (e.g. QuotaExceededError) are recorded so
+ * the UI can tell the user the model will not be available offline.
+ */
+const appCache = {
+  async match(key: string): Promise<Response | undefined> {
+    return (await caches.open(BROWSER_CACHE_KEY)).match(key)
+  },
+  async put(key: string, response: Response): Promise<void> {
+    try {
+      await (await caches.open(BROWSER_CACHE_KEY)).put(key, response)
+    } catch (e) {
+      const file = key.split('/').slice(-2).join('/')
+      cacheWriteErrors.push(`${file}: ${(e as Error).name}: ${(e as Error).message}`)
+      throw e
+    }
+  },
 }
 
 let envConfigured = false
@@ -85,7 +157,9 @@ export function configureRuntime(): void {
   envConfigured = true
   env.allowRemoteModels = true
   env.allowLocalModels = false
-  env.useBrowserCache = typeof caches !== 'undefined'
+  env.useBrowserCache = false
+  env.useCustomCache = typeof caches !== 'undefined'
+  env.customCache = typeof caches !== 'undefined' ? appCache : null
   env.cacheKey = BROWSER_CACHE_KEY
   env.useWasmCache = typeof caches !== 'undefined'
   env.fetch = appFetch
@@ -237,6 +311,7 @@ export class TransformersEngine implements InferenceEngine {
     configureRuntime()
     await this.unload()
     const t0 = performance.now()
+    cacheWriteErrors = []
     const { source, device, dtype } = request
     const isLocal = source.kind === 'local'
     let modelId: string
@@ -266,7 +341,7 @@ export class TransformersEngine implements InferenceEngine {
       env.allowRemoteModels = false
       env.localModelPath = LOCAL_PREFIX
       // Never copy local files into Cache Storage.
-      env.useBrowserCache = false
+      env.useCustomCache = false
       // Unique id per load: Transformers.js memoizes file metadata per model id.
       modelId = `local/m${++localLoadCounter}`
       Object.assign(options, {
@@ -277,20 +352,13 @@ export class TransformersEngine implements InferenceEngine {
       })
     } else {
       localFiles = null
+      pinnedHub = { repo: source.repo, revision: source.revision }
       env.allowLocalModels = false
       env.allowRemoteModels = true
-      env.useBrowserCache = typeof caches !== 'undefined'
+      env.useCustomCache = typeof caches !== 'undefined'
       modelId = source.repo
       options.revision = source.revision
-      try {
-        fromCache = await ModelRegistry.is_cached(source.repo, {
-          revision: source.revision,
-          dtype,
-          device,
-        })
-      } catch {
-        fromCache = null
-      }
+      fromCache = await weightsCached(source.repo, source.revision, dtype)
     }
 
     try {
@@ -323,7 +391,7 @@ export class TransformersEngine implements InferenceEngine {
       if (isLocal) {
         env.allowLocalModels = false
         env.allowRemoteModels = true
-        env.useBrowserCache = typeof caches !== 'undefined'
+        env.useCustomCache = typeof caches !== 'undefined'
       }
     }
 
@@ -412,7 +480,12 @@ export class TransformersEngine implements InferenceEngine {
               : {}),
           }
         : null
-    return { info, tokenizer: tokenizerSnap, suggestedSampling: suggested }
+    return {
+      info,
+      tokenizer: tokenizerSnap,
+      suggestedSampling: suggested,
+      cacheWarnings: [...cacheWriteErrors],
+    }
   }
 
   private snapshotTokenizer(

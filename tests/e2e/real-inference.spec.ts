@@ -149,3 +149,43 @@ test('real SmolLM2-135M inference on the WebGPU backend (when an adapter exists)
     description: `webgpu q8 (${hasGpu?.trim()}): top tokens ${JSON.stringify(r.topText)}`,
   })
 })
+
+test('a cached model loads and runs fully offline (service worker + Cache Storage)', async ({
+  page,
+  context,
+}) => {
+  // q8 (136 MB) also fits the in-memory cache of incognito-like test contexts.
+  await serveHfFromDisk(context)
+  await page.goto('./?debug=1')
+  await page.evaluate(async () => (await navigator.serviceWorker.ready).scope)
+  const load = async () => {
+    await page.getByTestId('backend-select').selectOption('wasm')
+    await page.getByLabel('Quantization for SmolLM2 135M Instruct').selectOption('q8')
+    await page.getByTestId('load-smollm2-135m-instruct').click()
+    await expect(page.getByTestId('model-status')).toHaveText('Ready', { timeout: 600_000 })
+  }
+  await load()
+  expect((await state(page)).info?.dtype).toBe('q8')
+
+  await context.setOffline(true)
+  const hfRequests: string[] = []
+  context.on('request', (r) => {
+    if (r.url().includes('huggingface.co')) hfRequests.push(r.url())
+  })
+  await page.reload()
+  await expect(page.getByTestId('online-status')).toHaveText(/Offline/)
+  await load()
+  const info = await page.evaluate(
+    () =>
+      (window as unknown as { __lte: { modelInfo: { value: { fromCache: boolean } } } }).__lte
+        .modelInfo.value,
+  )
+  expect(info.fromCache).toBe(true)
+  await page.getByTestId('context-text').fill('The capital of France is')
+  await waitForDistribution(page, 300_000)
+  const s = await state(page)
+  expect(s.logits).toHaveLength(VOCAB)
+  expect(Math.abs(s.probSum - 1)).toBeLessThan(1e-6)
+  expect(hfRequests).toEqual([])
+  await context.setOffline(false)
+})

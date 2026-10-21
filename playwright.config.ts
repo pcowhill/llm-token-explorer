@@ -39,7 +39,11 @@ export default defineConfig({
   },
   projects: [
     { name: 'e2e', testMatch: /workflow\.spec\.ts|pwa\.spec\.ts|a11y\.spec\.ts/, timeout: 120_000 },
-    { name: 'real-inference', testMatch: /real-inference\.spec\.ts|catalog-verification\.spec\.ts/, timeout: 900_000 },
+    {
+      name: 'real-inference',
+      testMatch: /real-inference\.spec\.ts|catalog-verification\.spec\.ts/,
+      timeout: 900_000,
+    },
     {
       name: 'live',
       testMatch: /live\.spec\.ts/,

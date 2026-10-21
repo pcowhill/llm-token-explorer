@@ -348,6 +348,13 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
           'The context keeps its token IDs. Different models use different vocabularies, so the same IDs may mean different text.',
         )
       }
+      if (res.cacheWarnings?.length) {
+        notify(
+          'warning',
+          `Some model files could not be saved in the browser cache, so the model will be downloaded again next time and is not available offline (${res.cacheWarnings[0]}).`,
+          0,
+        )
+      }
       await refreshDecodedText()
       if (!res.info.tokenizerOnly) scheduleInference(0)
       return true
