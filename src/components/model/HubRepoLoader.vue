@@ -63,7 +63,10 @@ onBeforeUnmount(() => {
 const cachedEntry = computed(() =>
   props.cached.find((c) => c.repo === repoId.value && c.revision === rev.value),
 )
-const fallback = computed(() => !info.value && !!error.value)
+/** Only connectivity problems fall back; a missing, gated or mistyped repo cannot be loaded. */
+const fallback = computed(
+  () => !info.value && (error.value?.kind === 'offline' || error.value?.kind === 'network'),
+)
 const variants = computed<FileVariant[]>(() => {
   if (info.value) return info.value.variants
   if (!fallback.value) return []
@@ -101,13 +104,27 @@ const selectedCached = computed(
   () => !!selected.value && cacheStatus.value.dtypes[selected.value.dtype] === 'cached',
 )
 
+const SUPPORT = ['config.json', 'generation_config.json', 'tokenizer.json', 'tokenizer_config.json']
+const supportBytes = computed(() =>
+  (info.value?.files ?? [])
+    .filter((f) => SUPPORT.includes(f.path))
+    .reduce((s, f) => s + (f.size ?? 0), 0),
+)
+/** Bytes still to download (0 when unknown, e.g. offline). */
+function missingBytes(v: FileVariant): number {
+  if (!v.sizeBytes) return 0
+  return (
+    (cacheStatus.value.weightsCached[v.dtype] ? 0 : v.sizeBytes) +
+    (cacheStatus.value.supportCached ? 0 : supportBytes.value)
+  )
+}
 function optionLabel(v: FileVariant): string {
   const state = cacheStatus.value.dtypes[v.dtype]
   const mark =
     state === 'cached'
       ? '✓ cached'
       : v.sizeBytes
-        ? `↓ ${formatBytes(v.sizeBytes)}${state === 'partial' ? ' (partly cached)' : ''}`
+        ? `↓ ${formatBytes(missingBytes(v))}${state === 'partial' ? ' (partly cached)' : ''}`
         : 'size unknown'
   const notes: string[] = []
   if (v.externalDataChunks) notes.push(`${v.files.length} files`)
@@ -119,7 +136,8 @@ function optionLabel(v: FileVariant): string {
 const blocked = computed(() => !!info.value?.errors.length)
 const loadLabel = computed(() => {
   if (selectedCached.value) return 'Load model (cached)'
-  if (selected.value?.sizeBytes) return `Download & load (${formatBytes(selected.value.sizeBytes)})`
+  if (selected.value?.sizeBytes)
+    return `Download & load (${formatBytes(missingBytes(selected.value))})`
   return 'Load model'
 })
 

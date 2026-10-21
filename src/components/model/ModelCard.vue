@@ -55,7 +55,7 @@ const cacheStatus = computed(() =>
 const variantCached = (v: ModelVariant) => cacheStatus.value.dtypes[v.dtype] === 'cached'
 /** Bytes still to download for a variant (weights + support files not yet cached). */
 const missingBytes = (v: ModelVariant) =>
-  (variantCached(v) ? 0 : v.sizeBytes) +
+  (cacheStatus.value.weightsCached[v.dtype] ? 0 : v.sizeBytes) +
   (cacheStatus.value.supportCached ? 0 : props.model.supportFilesBytes)
 const selectedCached = computed(() => variantCached(variant.value))
 const cachedBadge = computed(() => {

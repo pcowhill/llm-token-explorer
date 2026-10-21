@@ -78,6 +78,8 @@ export type DtypeCacheState = 'cached' | 'partial' | 'none'
 export interface RepoCacheStatus {
   /** Per dtype: every file cached, some files cached, or none. */
   dtypes: Partial<Record<ModelDtype, DtypeCacheState>>
+  /** Per dtype: every weight file (graph + data chunks) cached, regardless of support files. */
+  weightsCached: Partial<Record<ModelDtype, boolean>>
   /** config.json + tokenizer files cached (enough for "Tokenizer only"). */
   supportCached: boolean
   /** dtypes whose files are all cached (and the support files too), in the given order. */
@@ -95,15 +97,17 @@ export function repoCacheStatus(
   const have = new Set(entry?.files.map((f) => f.path) ?? [])
   const supportCached = REQUIRED_SUPPORT_FILES.every((f) => have.has(f))
   const dtypes: RepoCacheStatus['dtypes'] = {}
+  const weightsCached: RepoCacheStatus['weightsCached'] = {}
   const cachedDtypes: ModelDtype[] = []
   for (const v of variants) {
     const n = v.files.filter((f) => have.has(f)).length
+    weightsCached[v.dtype] = v.files.length > 0 && n === v.files.length
     const state: DtypeCacheState =
       n === 0 ? 'none' : n === v.files.length && supportCached ? 'cached' : 'partial'
     dtypes[v.dtype] = state
     if (state === 'cached') cachedDtypes.push(v.dtype)
   }
-  return { dtypes, supportCached, cachedDtypes }
+  return { dtypes, weightsCached, supportCached, cachedDtypes }
 }
 
 /** Variants inferred from what is cached for a repo (used offline and in the Cache tab). */
