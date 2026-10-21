@@ -122,6 +122,12 @@ describe('backend and dtype selection', () => {
     expect(
       resolveBackend('auto', caps({ webgpu: true, webgpuAdapter: { isFallbackAdapter: true } })),
     ).toBe('wasm')
+    expect(
+      resolveBackend(
+        'auto',
+        caps({ webgpu: true, webgpuAdapter: { architecture: 'swiftshader' } }),
+      ),
+    ).toBe('wasm')
     expect(resolveBackend('webgpu', null)).toBe('webgpu')
   })
   it('avoids f16 variants when the GPU lacks shader-f16', () => {
@@ -131,8 +137,8 @@ describe('backend and dtype selection', () => {
     ).toBe('q4f16')
     expect(
       chooseDtype(m, 'webgpu', caps({ webgpu: true, webgpuAdapter: { shaderF16: false } })),
-    ).toBe('q8')
-    expect(chooseDtype(m, 'wasm', caps({}))).toBe('q8')
+    ).toBe('fp32')
+    expect(chooseDtype(m, 'wasm', caps({}))).toBe('fp16')
   })
 })
 

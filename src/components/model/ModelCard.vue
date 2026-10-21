@@ -150,6 +150,14 @@ function load(tokenizerOnly = false) {
       </label>
       <span class="faint">{{ DTYPE_DESCRIPTIONS[dtype] }}</span>
     </div>
+    <p
+      v-if="variant.fidelity || variant.note"
+      class="small muted fidelity"
+      data-testid="variant-fidelity"
+    >
+      <strong>Fidelity:</strong> {{ variant.fidelity ?? 'not measured' }}
+      <template v-if="variant.note"> {{ variant.note }}</template>
+    </p>
     <p v-if="!supported" class="alert alert-warning small">
       {{ dtype }} is not recommended on {{ props.backend }}; choose another quantization or backend.
     </p>

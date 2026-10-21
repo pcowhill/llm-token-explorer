@@ -34,6 +34,12 @@ export interface ModelVariant {
   backends: Backend[]
   /** Which backend this variant is the default for. */
   defaultFor?: Backend
+  /**
+   * Measured fidelity vs. the full-precision model: mean KL divergence (nats) of the
+   * next-token distribution over 5 reference prompts, plus top-1 agreement. See
+   * docs/model-compatibility.md#quantization-fidelity.
+   */
+  fidelity?: string
   note?: string
 }
 

@@ -112,7 +112,12 @@ const RESULT_CACHE_SIZE = 24
 export function resolveBackend(pref: BackendPreference, caps: Capabilities | null): Backend {
   if (pref === 'wasm') return 'wasm'
   if (pref === 'webgpu') return 'webgpu'
-  return caps?.webgpu && !caps.webgpuAdapter?.isFallbackAdapter ? 'webgpu' : 'wasm'
+  const a = caps?.webgpuAdapter
+  // Software adapters (e.g. SwiftShader) are slower than WASM; only auto-pick real GPUs.
+  const software =
+    !!a?.isFallbackAdapter ||
+    /swiftshader/i.test(`${a?.architecture ?? ''} ${a?.description ?? ''}`)
+  return caps?.webgpu && !software ? 'webgpu' : 'wasm'
 }
 
 /** Choose a dtype that the backend + adapter can run (f16 variants need shader-f16 on WebGPU). */

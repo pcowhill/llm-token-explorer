@@ -48,8 +48,13 @@ import {
 } from './engine'
 import { detectCapabilities } from './capabilities'
 
-const LOCAL_ORIGIN = 'https://local-files.invalid'
-const LOCAL_MODEL_ID = 'local-model'
+/**
+ * Local files are exposed to Transformers.js under this pseudo path. It must NOT be an
+ * http(s) URL: the library only probes `localModelPath` for files when it is a path.
+ * Requests for it never reach the network; `appFetch` answers them from the File objects.
+ */
+const LOCAL_PREFIX = '/__local_models__/'
+let localLoadCounter = 0
 const BROWSER_CACHE_KEY = 'transformers-cache'
 
 let localFiles: Map<string, File> | null = null
@@ -57,9 +62,12 @@ let localFiles: Map<string, File> | null = null
 /** fetch() wrapper: serves user-selected local files from memory; everything else goes to the network. */
 async function appFetch(input: string | URL, init?: RequestInit): Promise<Response> {
   const url = typeof input === 'string' ? input : input.href
-  if (url.startsWith(LOCAL_ORIGIN)) {
-    const prefix = `${LOCAL_ORIGIN}/models/${LOCAL_MODEL_ID}/`
-    const rel = decodeURIComponent(url.startsWith(prefix) ? url.slice(prefix.length) : '')
+  const path = url.startsWith(self.location.origin) ? url.slice(self.location.origin.length) : url
+  if (path.startsWith(LOCAL_PREFIX)) {
+    // <prefix>local/<loadId>/<relative path>
+    const rel = decodeURIComponent(
+      path.slice(LOCAL_PREFIX.length).split('/').filter(Boolean).slice(2).join('/'),
+    )
     const file = localFiles?.get(rel)
     if (!file)
       return new Response(null, { status: 404, statusText: `Local file not selected: ${rel}` })
@@ -256,10 +264,11 @@ export class TransformersEngine implements InferenceEngine {
       localFiles = new Map(src.files.map((f) => [f.path, f.file]))
       env.allowLocalModels = true
       env.allowRemoteModels = false
-      env.localModelPath = `${LOCAL_ORIGIN}/models/`
+      env.localModelPath = LOCAL_PREFIX
       // Never copy local files into Cache Storage.
       env.useBrowserCache = false
-      modelId = LOCAL_MODEL_ID
+      // Unique id per load: Transformers.js memoizes file metadata per model id.
+      modelId = `local/m${++localLoadCounter}`
       Object.assign(options, {
         local_files_only: true,
         subfolder: src.subfolder,

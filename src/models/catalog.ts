@@ -27,13 +27,13 @@ export const DTYPE_FILE_SUFFIX: Record<ModelDtype, string> = {
 
 export const DTYPE_DESCRIPTIONS: Record<ModelDtype, string> = {
   fp32: '32-bit floating point weights (no quantization, largest, reference accuracy).',
-  fp16: '16-bit floating point weights (half the size of fp32; best on WebGPU with shader-f16).',
-  q8: '8-bit dynamically quantized weights (≈¼ of fp32; recommended for WASM/CPU).',
+  fp16: '16-bit floating point weights (half the size of fp32; essentially identical outputs). Runs on WASM; on WebGPU it needs shader-f16.',
+  q8: '8-bit dynamically quantized weights and activations (≈¼ of fp32). Small, but can distort the distribution noticeably.',
   int8: 'Signed 8-bit quantized weights.',
   uint8: 'Unsigned 8-bit quantized weights.',
   q4: '4-bit block-quantized weights with fp32 activations.',
   q4f16: '4-bit block-quantized weights with fp16 activations (smallest; WebGPU).',
-  bnb4: '4-bit bitsandbytes-style quantization.',
+  bnb4: '4-bit NF4/FP4 (bitsandbytes-style) weight quantization; activations stay in fp32.',
 }
 
 export const CATALOG: CatalogModel[] = [
@@ -53,11 +53,28 @@ export const CATALOG: CatalogModel[] = [
     logitsSize: 49152,
     variants: [
       {
+        dtype: 'fp16',
+        files: ['onnx/model_fp16.onnx'],
+        sizeBytes: 269_900_000,
+        backends: ['wasm', 'webgpu'],
+        defaultFor: 'wasm',
+        fidelity: 'Matches fp32 (KL < 0.0001 nats, top-1 5/5).',
+        note: 'Default: exact distribution at half the size of fp32. On WebGPU it needs shader-f16.',
+      },
+      {
+        dtype: 'fp32',
+        files: ['onnx/model.onnx'],
+        sizeBytes: 538_900_000,
+        backends: ['wasm', 'webgpu'],
+        fidelity: 'Reference precision.',
+      },
+      {
         dtype: 'q8',
         files: ['onnx/model_quantized.onnx'],
         sizeBytes: 135_700_000,
         backends: ['wasm', 'webgpu'],
-        defaultFor: 'wasm',
+        fidelity: 'Approximate: KL 1.15 nats vs fp32, top-1 agreement 2/5.',
+        note: 'Smallest CPU option, but dynamic 8-bit quantization visibly reshapes the distribution of this small model.',
       },
       {
         dtype: 'q4f16',
@@ -65,33 +82,27 @@ export const CATALOG: CatalogModel[] = [
         sizeBytes: 117_300_000,
         backends: ['webgpu'],
         defaultFor: 'webgpu',
-      },
-      {
-        dtype: 'fp16',
-        files: ['onnx/model_fp16.onnx'],
-        sizeBytes: 269_900_000,
-        backends: ['webgpu'],
-      },
-      {
-        dtype: 'fp32',
-        files: ['onnx/model.onnx'],
-        sizeBytes: 538_900_000,
-        backends: ['wasm', 'webgpu'],
+        fidelity: 'Approximate (4-bit weights); not measured.',
       },
     ],
     supportFilesBytes: 3_527_558,
-    memoryEstimateBytes: { wasm: 400 * MB, webgpu: 350 * MB },
+    memoryEstimateBytes: { wasm: 650 * MB, webgpu: 500 * MB },
     verification: {
       status: 'verified',
       summary:
-        'Real forward passes in headless Chromium (WASM backend, q8) inside a Web Worker: full 49,152-dim logits, softmax sums to 1, append + second forward pass. Also verified in Node.js (onnxruntime-node CPU).',
-      verifiedOn: ['Chromium WASM (q8)', 'Node.js CPU (q8)'],
+        'Real forward passes in headless Chromium inside the app’s Web Worker: full 49,152-dim logits, softmax sums to 1, token append + further passes (automated CI smoke test). Verified on WASM with fp16, fp32 and q8, and on WebGPU (SwiftShader software adapter) with q8. fp16 reproduces fp32 exactly (“The capital of France is” → “ Paris” 46.9%).',
+      verifiedOn: [
+        'Chromium WASM (fp16, fp32, q8)',
+        'Chromium WebGPU/SwiftShader (q8)',
+        'Node.js CPU',
+      ],
       date: '2026-10-21',
     },
     description:
       'A very small instruction-tuned model. Fast enough on CPU for interactive exploration; the recommended starting point.',
     limitations: [
       'Small model: factual answers are often wrong and text quickly becomes repetitive.',
+      'q8 visibly changes this model’s distribution (KL 1.15 nats vs fp32); use fp16/fp32 when exact probabilities matter.',
       'The tokenizer config names <|im_start|> as "bos_token" but encode() does not add it automatically; the chat template adds role markers explicitly.',
     ],
     promptFormat:
@@ -161,11 +172,28 @@ export const CATALOG: CatalogModel[] = [
     logitsSize: 151936,
     variants: [
       {
+        dtype: 'bnb4',
+        files: ['onnx/model_bnb4.onnx'],
+        sizeBytes: 763_800_000,
+        backends: ['wasm'],
+        defaultFor: 'wasm',
+        fidelity: 'Closest browser-feasible variant: KL 0.22 nats vs fp16, top-1 agreement 5/5.',
+        note: 'fp16 (1 GB) does not fit in WebAssembly memory, so a 4-bit variant is the default on WASM.',
+      },
+      {
         dtype: 'q8',
         files: ['onnx/model_quantized.onnx'],
         sizeBytes: 512_100_000,
         backends: ['wasm', 'webgpu'],
-        defaultFor: 'wasm',
+        fidelity: 'Approximate: KL 1.46 nats vs fp16, top-1 agreement 3/5.',
+        note: 'Smaller download, noticeably distorted distribution.',
+      },
+      {
+        dtype: 'q4',
+        files: ['onnx/model_q4.onnx'],
+        sizeBytes: 786_200_000,
+        backends: ['wasm', 'webgpu'],
+        fidelity: 'Approximate: KL 0.57 nats vs fp16, top-1 agreement 3/5.',
       },
       {
         dtype: 'q4f16',
@@ -173,27 +201,31 @@ export const CATALOG: CatalogModel[] = [
         sizeBytes: 483_000_000,
         backends: ['webgpu'],
         defaultFor: 'webgpu',
+        fidelity: 'Approximate (4-bit weights); not measured.',
       },
       {
         dtype: 'fp16',
         files: ['onnx/model_fp16.onnx'],
         sizeBytes: 997_400_000,
         backends: ['webgpu'],
+        fidelity: 'Reference (fp16).',
+        note: 'WebGPU only (too large for WASM memory); needs shader-f16.',
       },
     ],
     supportFilesBytes: 7_040_442,
-    memoryEstimateBytes: { wasm: 1200 * MB, webgpu: 900 * MB },
+    memoryEstimateBytes: { wasm: 1800 * MB, webgpu: 1100 * MB },
     verification: {
       status: 'verified',
       summary:
-        'Real forward passes in headless Chromium (WASM, q8): 151,936-dim logits (271 more output rows than the 151,665 tokenizer entries — these padding rows are shown but excluded from sampling). Also verified in Node.js.',
-      verifiedOn: ['Chromium WASM (q8)', 'Node.js CPU (q8)'],
+        'Real forward passes in headless Chromium (WASM) with bnb4, q4 and q8: 151,936-dim logits (271 more output rows than the 151,665 tokenizer entries — these padding rows are shown but excluded from sampling). fp16 was verified only in Node.js (it exceeds WASM memory in the browser); WebGPU variants were not tested (no hardware GPU in CI).',
+      verifiedOn: ['Chromium WASM (bnb4, q4, q8)', 'Node.js CPU (fp16, q8, q4, bnb4)'],
       date: '2026-10-21',
     },
     description:
       'A stronger multilingual instruct model with a large 151k-token byte-level BPE vocabulary. Heavier download.',
     limitations: [
-      '≈512 MB download; WASM inference is noticeably slower than SmolLM2.',
+      '≈764 MB download (bnb4); one WASM forward pass takes roughly 1 s on a typical CPU.',
+      'fp16 (1 GB) does not fit in WebAssembly memory; every browser-WASM variant is quantized and therefore approximate.',
       'Logits dimension (151,936) is larger than the tokenizer (151,665): IDs 151665–151935 have no token text.',
       'The model card recommends repetition_penalty=1.1, which this app does not implement (it exposes the raw distribution).',
     ],
@@ -262,33 +294,37 @@ export const CATALOG: CatalogModel[] = [
     logitsSize: 50257,
     variants: [
       {
-        dtype: 'q8',
-        files: ['onnx/model_quantized.onnx'],
-        sizeBytes: 279_600_000,
-        backends: ['wasm', 'webgpu'],
-        defaultFor: 'wasm',
-      },
-      {
         dtype: 'fp16',
         files: ['onnx/model_fp16.onnx'],
         sizeBytes: 249_300_000,
-        backends: ['webgpu'],
-        defaultFor: 'webgpu',
+        backends: ['wasm', 'webgpu'],
+        defaultFor: 'wasm',
+        fidelity: 'Matches fp32 (KL < 0.0001 nats, top-1 5/5).',
+        note: 'Default: exact and smaller than q8 (whose embedding matrix is not quantized).',
       },
       {
         dtype: 'fp32',
         files: ['onnx/model.onnx'],
         sizeBytes: 498_100_000,
         backends: ['wasm', 'webgpu'],
+        defaultFor: 'webgpu',
+        fidelity: 'Reference precision.',
+      },
+      {
+        dtype: 'q8',
+        files: ['onnx/model_quantized.onnx'],
+        sizeBytes: 279_600_000,
+        backends: ['wasm', 'webgpu'],
+        fidelity: 'Approximate: KL 0.22 nats vs fp32, top-1 agreement 3/5.',
       },
     ],
     supportFilesBytes: 2_109_139,
-    memoryEstimateBytes: { wasm: 700 * MB, webgpu: 600 * MB },
+    memoryEstimateBytes: { wasm: 600 * MB, webgpu: 800 * MB },
     verification: {
       status: 'verified',
       summary:
-        'Real forward passes in headless Chromium (WASM, q8): 50,257-dim logits. Also verified in Node.js.',
-      verifiedOn: ['Chromium WASM (q8)', 'Node.js CPU (q8)'],
+        'Real forward passes in headless Chromium (WASM) with fp16 and q8: 50,257-dim logits, softmax sums to 1. fp16 matches fp32 in Node.js.',
+      verifiedOn: ['Chromium WASM (fp16, q8)', 'Node.js CPU (fp32, fp16, q8)'],
       date: '2026-10-21',
     },
     description:
@@ -296,7 +332,7 @@ export const CATALOG: CatalogModel[] = [
     limitations: [
       'Base model: no chat template and no instruction following.',
       'Short 1,024-token context window.',
-      'The q8 file is larger than you might expect because the tied embedding matrix is not quantized.',
+      'The q8 file is larger than fp16 because the tied embedding matrix is not quantized.',
     ],
     promptFormat:
       'Plain text. <|endoftext|> (50256) is the only special token: it separates documents and serves as BOS/EOS.',

@@ -19,6 +19,8 @@ const props = defineProps<{
   special: Set<number>
   exact: boolean
   testid?: string
+  /** When false, rows keep the given order (the caller controls sorting). */
+  sortable?: boolean
 }>()
 const emit = defineEmits<{ pick: [number] }>()
 const sortKey = ref<Key>('rank')
@@ -35,6 +37,7 @@ const rows = computed(() => {
     original: props.original[id] ?? 0,
     adjusted: props.adjusted?.[id] ?? 0,
   }))
+  if (props.sortable === false) return r
   const k = sortKey.value
   const dir = asc.value ? 1 : -1
   r.sort((a, b) => {
@@ -82,10 +85,15 @@ const cols: [Key, string, boolean][] = [
             v-for="[k, label, num] in cols"
             :key="k"
             :class="{ num }"
-            :aria-sort="ariaSort(k)"
+            :aria-sort="props.sortable === false ? undefined : ariaSort(k)"
             scope="col"
           >
-            <button type="button" class="sort" @click="sortBy(k)">
+            <button
+              type="button"
+              class="sort"
+              :disabled="props.sortable === false"
+              @click="sortBy(k)"
+            >
               {{ label
               }}<span aria-hidden="true">{{ sortKey === k ? (asc ? ' ▲' : ' ▼') : '' }}</span>
             </button>

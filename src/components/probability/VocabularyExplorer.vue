@@ -133,6 +133,7 @@ function goPage() {
       </div>
       <CandidateTable
         testid="vocab-table"
+        :sortable="false"
         :ids="current.ids"
         :rank-of="(id) => rankMap.get(id) ?? -1"
         :original="dist?.original ?? empty64"
