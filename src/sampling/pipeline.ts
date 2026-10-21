@@ -136,6 +136,23 @@ export function adjustDistribution(
   }
 
   const T = settings.temperature
+  // +Infinity logits (never produced by real models, but possible in principle): the limit
+  // distribution is uniform over them, independent of temperature.
+  if ((logits[order[0] as number] as number) === Infinity) {
+    let inf = 0
+    while (inf < m && logits[order[inf] as number] === Infinity) inf++
+    const keepInf = settings.topK > 0 ? Math.min(inf, settings.topK) : inf
+    const kept = order.slice(0, keepInf)
+    for (const id of kept) probs[id] = 1 / keepInf
+    return {
+      probs,
+      keptCount: keepInf,
+      kept,
+      greedy: false,
+      stages: { afterTemperature: inf, afterTopK: keepInf, afterTopP: keepInf, afterMinP: keepInf },
+      temperature: T,
+    }
+  }
   // Step 2: temperature-scaled softmax over eligible IDs, in descending order.
   // order[0] has the max logit, so subtracting it keeps exp() in (0, 1].
   const maxScaled = (logits[order[0] as number] as number) / T

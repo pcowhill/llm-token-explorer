@@ -204,3 +204,13 @@ describe('validateSamplingSettings', () => {
     expect(validateSamplingSettings(S({ temperature: NaN }))).toHaveLength(1)
   })
 })
+
+describe('+Infinity logits', () => {
+  it('produce a uniform adjusted distribution over the infinite entries', () => {
+    const p = prepareLogits(Float32Array.from([1, Infinity, 2, Infinity]))
+    const a = adjustDistribution(p, S({ temperature: 0.7 }))
+    expect(Array.from(a.probs)).toEqual([0, 0.5, 0, 0.5])
+    expect(adjustDistribution(p, S({ topK: 1 })).keptCount).toBe(1)
+    expect(Array.from(adjustDistribution(p, S({ greedy: true })).probs)).toEqual([0, 1, 0, 0])
+  })
+})

@@ -214,3 +214,54 @@ describe('DiagnosticsPanel', () => {
     void seedToState
   })
 })
+
+describe('store race conditions', () => {
+  it('two concurrent sample requests append only one token', async () => {
+    const { wb, engine } = await makeWorkbench({ text: 'The' })
+    engine.forwardDelayMs = 20
+    wb.setTokens([8, 3], 'x')
+    const [a, b] = await Promise.all([wb.sampleOne(), wb.sampleOne()])
+    await settle()
+    expect([a, b].filter((x) => x !== null)).toHaveLength(1)
+    expect(wb.tokens.value).toHaveLength(3)
+  })
+
+  it('importing an experiment keeps its saved generator state', async () => {
+    const { wb } = await makeWorkbench({ text: 'The' })
+    wb.resetSeed(777)
+    await wb.sampleOne()
+    await settle()
+    const saved = [...wb.prng.value]
+    const json = wb.exportExperiment()
+    const { wb: wb2 } = await makeWorkbench()
+    wb2.importExperiment(json)
+    await settle()
+    expect([...wb2.prng.value]).toEqual(saved)
+    expect(wb2.sampling.seed).toBe(777)
+  })
+
+  it('a pending text re-tokenization does not undo a later undo', async () => {
+    const { wb, engine } = await makeWorkbench({ text: 'The' })
+    wb.pickToken(3)
+    await settle()
+    // A busy worker answers decode requests late, so the typed draft is still pending.
+    engine.decodeDelayMs = 100
+    wb.setText('The cat sat')
+    wb.undo()
+    await new Promise((r) => setTimeout(r, 300))
+    await settle()
+    expect(wb.tokens.value).toEqual([8])
+    expect(wb.getTree().nodes.size).toBe(3) // root, "The", "The the" — no stray edit node
+  })
+
+  it('navigating back restores a generator state that matches the shown seed', async () => {
+    const { wb } = await makeWorkbench({ text: 'The' })
+    wb.resetSeed(5)
+    const at = [...wb.prng.value]
+    await wb.sampleOne()
+    await settle()
+    wb.undo()
+    expect(wb.sampling.seed).toBe(5)
+    expect([...wb.prng.value]).toEqual(at)
+  })
+})

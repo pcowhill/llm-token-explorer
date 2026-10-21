@@ -98,6 +98,7 @@ export class FakeEngine implements InferenceEngine {
   failLoad: string | null = null
   failForward: string | null = null
   forwardDelayMs = 0
+  decodeDelayMs = 0
   logitsFn: (ids: number[]) => Float32Array = fakeLogits
 
   async capabilities(): Promise<Capabilities> {
@@ -161,6 +162,7 @@ export class FakeEngine implements InferenceEngine {
   }
 
   async decode(ids: number[]): Promise<string> {
+    if (this.decodeDelayMs) await new Promise((r) => setTimeout(r, this.decodeDelayMs))
     return ids.map((i) => FAKE_DECODED[i] ?? '').join('')
   }
 

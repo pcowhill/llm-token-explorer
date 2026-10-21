@@ -364,10 +364,19 @@ export function validateExperiment(data: unknown): ParsedExperiment {
         problems.push(`node ${n.id}: child ${c} has a different parent`)
     }
     if (n.preferredChild && !n.children.includes(n.preferredChild)) n.preferredChild = null
+    if (n.kind === 'root' && n.id !== rootId)
+      problems.push(`node ${n.id}: only the root may be kind "root"`)
     if (n.kind === 'append') {
       if (!n.append) problems.push(`node ${n.id}: append node without append details`)
       else if (n.tokens[n.tokens.length - 1] !== n.append.tokenId)
         problems.push(`node ${n.id}: last token does not match append.tokenId`)
+      const parent = n.parentId ? nodes.get(n.parentId) : undefined
+      if (
+        parent &&
+        (n.tokens.length !== parent.tokens.length + 1 ||
+          parent.tokens.some((t, i) => n.tokens[i] !== t))
+      )
+        problems.push(`node ${n.id}: tokens must equal the parent's tokens plus the appended token`)
     }
   }
   if (isStr(rootId) && nodes.has(rootId)) {
@@ -390,7 +399,8 @@ export function validateExperiment(data: unknown): ParsedExperiment {
 
   let maxNum = 0
   for (const id of nodes.keys()) {
-    const m = /^n(\d+)$/.exec(id)
+    // Only small numeric ids participate in numbering; huge ones cannot collide with it.
+    const m = /^n(\d{1,9})$/.exec(id)
     if (m) maxNum = Math.max(maxNum, Number(m[1]))
   }
   const tree: HistoryTree = {

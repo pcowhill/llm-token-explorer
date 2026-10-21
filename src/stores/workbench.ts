@@ -435,6 +435,7 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     label: string,
     opts: { coalesce?: boolean; fromText?: boolean } = {},
   ) {
+    if (!opts.fromText) cancelPendingText()
     commitEdit(tree, next, {
       modelIdentity: modelInfo.value?.identity ?? null,
       prngState: prng.value,
@@ -446,8 +447,17 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     scheduleInference()
   }
 
+  /** Drop a pending/in-flight re-tokenization of typed text (superseded by a token-level change). */
+  function cancelPendingText() {
+    if (textTimer) clearTimeout(textTimer)
+    textTimer = null
+    textRequest++
+    tokenizing.value = false
+  }
+
   /** User typed in the text editor: debounce, re-tokenize the whole text, replace the context. */
   function setText(text: string) {
+    decodeRequest++ // an in-flight decode must not overwrite what the user just typed
     textDraft.value = text
     textSource.value = 'user'
     roundTrips.value = null
@@ -582,6 +592,8 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
   function clearInference() {
     if (inferTimer) clearTimeout(inferTimer)
     latestRequest = ++requestCounter
+    inflight = null
+    inflightKey = null
     result.value = null
     prepared.value = null
     inferenceStatus.value = 'idle'
@@ -654,7 +666,9 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     const requestId = ++requestCounter
     latestRequest = requestId
     inferenceStatus.value = 'running'
-    const run = (async () => {
+    // Declared first so the finally block can tell whether it is still the in-flight run.
+    let run: Promise<InferenceResult | null> | undefined = undefined
+    run = (async () => {
       try {
         const out = await engine.forward(ids, { useKvCache: generation.useKvCache })
         forwardCount.value++
@@ -680,13 +694,13 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
         adopt(r)
         return r
       } catch (e) {
-        if (requestId !== latestRequest) return null
+        if (requestId !== latestRequest || key !== currentKey.value) return null
         const err = classifyError(e)
         inferenceStatus.value = 'error'
         inferenceError.value = markRaw(err)
         return null
       } finally {
-        if (inflightKey === key) {
+        if (inflight === run) {
           inflight = null
           inflightKey = null
         }
@@ -769,11 +783,14 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
 
   /** Sample exactly one token from the adjusted distribution (greedy if configured). */
   async function sampleOne(source: AppendSource = 'sample'): Promise<number | null> {
+    const startKey = currentKey.value
     if (!(await ensureResult())) {
       if (!inferenceError.value)
         notify('warning', 'No next-token distribution available for this context.')
       return null
     }
+    // Another action may have changed the context while we waited (e.g. key repeat).
+    if (currentKey.value !== startKey || !resultIsCurrent.value) return null
     const a = adjusted.value
     if (!a || a.keptCount === 0) {
       notify('error', samplingErrors.value[0] ?? 'No eligible tokens to sample.')
@@ -795,7 +812,9 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
 
   /** Append the single most likely token (argmax of the raw logits over eligible IDs). */
   async function greedyOne(): Promise<number | null> {
+    const startKey = currentKey.value
     if (!(await ensureResult())) return null
+    if (currentKey.value !== startKey || !resultIsCurrent.value) return null
     const id = prepared.value?.order[0]
     if (id === undefined) return null
     append(id, 'greedy', null, null)
@@ -860,8 +879,12 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
   // ===================================================================
 
   function afterNavigate() {
+    cancelPendingText()
     const n = currentNode(tree)
     if (n.prngState) prng.value = n.prngState
+    // Show the seed that produced this node's generator state, when recorded.
+    const seed = n.append?.sampling?.seed
+    if (seed !== undefined) sampling.seed = seed
     touch()
     void refreshDecodedText()
     scheduleInference(0)
@@ -888,17 +911,16 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
     afterNavigate()
   }
 
+  /**
+   * Restart the generator from a seed. The new state is also stored on the current
+   * history node, so navigating back here resumes the stream that matches the shown seed.
+   * (Seed changes are explicit actions; importing settings never resets the generator.)
+   */
   function resetSeed(seed = sampling.seed) {
     sampling.seed = seed
     prng.value = seedToState(seed)
+    currentNode(tree).prngState = prng.value
   }
-
-  watch(
-    () => sampling.seed,
-    (s) => {
-      if (Number.isInteger(s) && s >= 0 && s <= 0xffffffff) prng.value = seedToState(s)
-    },
-  )
 
   watch(
     () => generation.autoInfer,
@@ -950,6 +972,7 @@ export function createWorkbench(engine: InferenceEngine, opts: { appVersion?: st
   function importExperiment(text: string): CompatibilityReport {
     const { file, tree: imported } = parseExperiment(text)
     stopAuto()
+    cancelPendingText()
     tree = imported
     Object.assign(sampling, file.sampling)
     Object.assign(generation, file.generation)

@@ -117,7 +117,7 @@ function onKey(e: KeyboardEvent) {
     wb.redo()
   } else if (e.altKey && e.key.toLowerCase() === 's') {
     e.preventDefault()
-    void wb.sampleOne()
+    if (!e.repeat && !wb.autoRunning.value) void wb.sampleOne()
   }
 }
 

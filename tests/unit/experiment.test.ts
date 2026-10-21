@@ -150,3 +150,36 @@ describe('experiment serialization', () => {
     expect(other.outOfRangeIds).toEqual([50256])
   })
 })
+
+describe('experiment validation hardening', () => {
+  it('does not hang or collide on huge numeric node ids', () => {
+    const f = serialize()
+    const old = f.history.nodes[2]!.id
+    const big = 'n9007199254740992'
+    f.history.nodes[2]!.id = big
+    for (const n of f.history.nodes) {
+      n.children = n.children.map((c) => (c === old ? big : c))
+      if (n.preferredChild === old) n.preferredChild = big
+    }
+    if (f.history.currentId === old) f.history.currentId = big
+    const { tree } = parseExperiment(JSON.stringify(f))
+    expect(tree.nodes.has(`n${tree.nextId}`)).toBe(false)
+    expect(tree.nextId).toBeLessThan(10)
+  })
+
+  it('rejects append nodes whose tokens do not extend the parent', () => {
+    const f = serialize()
+    const append = f.history.nodes.find((n) => n.kind === 'append')!
+    append.tokens = [7, ...append.tokens.slice(1)]
+    expect(() => parseExperiment(JSON.stringify(f))).toThrow(/parent's tokens/)
+  })
+
+  it('rejects non-root nodes of kind root', () => {
+    const f = serialize()
+    const child = f.history.nodes.find((n) => n.parentId !== null && n.kind !== 'append')
+    const target = child ?? f.history.nodes.find((n) => n.parentId !== null)!
+    target.kind = 'root'
+    delete target.append
+    expect(() => parseExperiment(JSON.stringify(f))).toThrow(/only the root/)
+  })
+})

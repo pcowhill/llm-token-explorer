@@ -7,7 +7,12 @@ import { exactNumber, formatLogit, formatProb } from '@/utils/format'
 
 const wb = useWorkbench()
 const g = wb.generation
-const busy = computed(() => wb.autoRunning.value || wb.inferenceStatus.value === 'running')
+const busy = computed(
+  () =>
+    wb.autoRunning.value ||
+    wb.inferenceStatus.value === 'running' ||
+    wb.inferenceStatus.value === 'pending',
+)
 const canAct = computed(
   () => wb.canInfer.value && wb.tokens.value.length > 0 && !wb.invalidTokenIds.value.length,
 )
